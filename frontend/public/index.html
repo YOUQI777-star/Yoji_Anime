@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anime Knowledge Graph</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Cytoscape.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+
+  <style>
+    /* ── Design tokens ─────────────────────────────────────── */
+    :root {
+      --bg:        #f7f7f5;
+      --surface:   #ffffff;
+      --surface2:  #f2f2ef;
+      --border:    rgba(0,0,0,0.07);
+      --border2:   rgba(0,0,0,0.13);
+      --text:      #1a1a18;
+      --muted:     #888880;
+      --accent:    #2563eb;
+      --accent-s:  rgba(37,99,235,0.08);
+
+      /* Node colours */
+      --c-anime:   #1e293b;
+      --c-char:    #16a34a;
+      --c-va:      #d97706;
+      --c-tag:     #94a3b8;
+      --c-studio:  #7c3aed;
+
+      /* Relation edge colours */
+      --e-main:     #2563eb;
+      --e-extra:    #f59e0b;
+      --e-skip:     #94a3b8;
+      --e-alt:      #7c3aed;
+      --e-universe: #06b6d4;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    #header {
+      height: 48px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-mark {
+      width: 22px; height: 22px;
+      background: var(--text);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .logo-mark svg { width: 12px; height: 12px; }
+
+    #breadcrumb {
+      font-size: 11px;
+      color: var(--muted);
+      border-left: 1px solid var(--border2);
+      padding-left: 16px;
+    }
+
+    #breadcrumb span { color: var(--text); font-weight: 500; }
+
+    #header-stats {
+      margin-left: auto;
+      display: flex;
+      gap: 20px;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+    }
+
+    .stat-val { color: var(--accent); font-weight: 500; }
+
+    /* ── Main layout ─────────────────────────────────────────── */
+    #main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    /* ── Graph canvas ────────────────────────────────────────── */
+    #graph-wrap {
+      flex: 1;
+      position: relative;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+    }
+
+    #cy { width: 100%; height: 100%; }
+
+    #graph-toolbar {
+      position: absolute;
+      bottom: 14px; right: 14px;
+      display: flex; gap: 4px;
+    }
+
+    .toolbar-btn {
+      width: 30px; height: 30px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted);
+    }
+
+    .toolbar-btn:hover { background: var(--surface2); color: var(--text); }
+
+    #graph-hint {
+      position: absolute;
+      top: 14px; left: 14px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+    }
+
+    /* ── Right panel ─────────────────────────────────────────── */
+    #panel {
+      width: 300px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #panel-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #panel-scroll::-webkit-scrollbar { width: 3px; }
+    #panel-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .section-label {
+      font-size: 9px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .section-label::after {
+      content: '';
+      flex: 1; height: 1px;
+      background: var(--border);
+    }
+
+    .card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .card-title {
+      font-size: 9px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex; align-items: center; gap: 5px;
+    }
+
+    .card-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .input-row { position: relative; margin-bottom: 7px; }
+
+    .panel-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 7px;
+      padding: 8px 11px;
+      font-size: 12px;
+      font-family: 'DM Sans', sans-serif;
+      color: var(--text);
+      outline: none;
+    }
+
+    .panel-input:focus {
+      border-color: rgba(37,99,235,.35);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.06);
+    }
+
+    .panel-btn {
+      width: 100%;
+      padding: 8px;
+      border-radius: 7px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--text);
+      font-size: 11px;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+    }
+
+    .panel-btn:hover { background: var(--surface2); }
+    .panel-btn.primary { background: var(--text); color: #fff; border-color: var(--text); }
+    .panel-btn.primary:hover { opacity: .85; }
+
+    /* ── Legend ──────────────────────────────────────────────── */
+    #legend {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .leg {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--muted);
+    }
+
+    .leg-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+
+    /* ── Detail panel ────────────────────────────────────────── */
+    #detail {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px;
+      background: var(--surface);
+      display: none;
+    }
+
+    #detail.visible { display: block; }
+
+    #detail-header {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .detail-badge {
+      font-size: 9px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: #e2e8f0;
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    #detail-close {
+      font-size: 14px;
+      color: var(--muted);
+      cursor: pointer;
+      background: none;
+      border: none;
+      line-height: 1;
+    }
+
+    #detail-name {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .detail-rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+    }
+
+    .detail-key {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      font-size: 9px;
+    }
+
+    .detail-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+    }
+
+    .score-wrap { display: flex; align-items: center; gap: 6px; }
+
+    .score-track {
+      width: 56px; height: 3px;
+      background: var(--surface2);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .score-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #3b82f6, #2563eb);
+    }
+
+    .quick-actions { display: flex; gap: 5px; }
+
+    .qa-btn {
+      flex: 1;
+      padding: 6px 4px;
+      border-radius: 6px;
+      border: 1px solid var(--border2);
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 9px;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .qa-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Autocomplete dropdown ───────────────────────────────── */
+    #autocomplete-list {
+      position: absolute;
+      top: 100%; left: 0; right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 7px;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,.08);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .ac-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .ac-item:hover { background: var(--surface2); }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--text);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity .3s;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────── -->
+<div id="header">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 12 12" fill="none">
+        <circle cx="4" cy="4" r="2" fill="white" opacity=".9"/>
+        <circle cx="8" cy="8" r="1.5" fill="white" opacity=".6"/>
+        <line x1="6" y1="4" x2="8" y2="7" stroke="white" stroke-width=".8" opacity=".7"/>
+      </svg>
+    </div>
+    Anime KG
+  </div>
+  <div id="breadcrumb">
+    <span id="breadcrumb-text">搜索动漫开始探索</span>
+  </div>
+  <div id="header-stats">
+    <div><span class="stat-val" id="stat-nodes">0</span> nodes</div>
+    <div><span class="stat-val" id="stat-edges">0</span> edges</div>
+  </div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- Graph canvas -->
+  <div id="graph-wrap">
+    <div id="cy"></div>
+    <div id="graph-hint">单击节点查看详情 · 双击展开关联</div>
+    <div id="graph-toolbar">
+      <button class="toolbar-btn" onclick="cy.zoom(cy.zoom()*1.2)" title="放大">+</button>
+      <button class="toolbar-btn" onclick="cy.zoom(cy.zoom()*0.8)" title="缩小">−</button>
+      <button class="toolbar-btn" onclick="cy.fit()" title="适应窗口">⊙</button>
+      <button class="toolbar-btn" onclick="clearGraph()" title="清空">✕</button>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div id="panel">
+    <div id="panel-scroll">
+
+      <!-- Explore section -->
+      <div class="section-label">Explore</div>
+
+      <div class="card">
+        <div class="card-title"><div class="card-dot"></div>Search</div>
+        <div class="input-row">
+          <input class="panel-input" id="search-input" type="text"
+                 placeholder="输入动漫、角色或声优名字…"
+                 oninput="onSearchInput()" onkeydown="onSearchKey(event)" />
+          <div id="autocomplete-list" style="display:none"></div>
+        </div>
+        <button class="panel-btn primary" onclick="doSearch()">Search</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><div class="card-dot" style="background:#10b981"></div>Recommend</div>
+        <div class="input-row">
+          <input class="panel-input" id="recommend-input" type="text"
+                 placeholder="动漫名字或 ID…"
+                 onkeydown="if(event.key==='Enter') doRecommend()" />
+        </div>
+        <button class="panel-btn" onclick="doRecommend()">Find Similar</button>
+      </div>
+
+      <!-- Discover section -->
+      <div class="section-label">Discover</div>
+
+      <div class="card">
+        <div class="card-title"><div class="card-dot" style="background:#f59e0b"></div>Voice Actor Casting</div>
+        <input class="panel-input" id="casting-input" type="text"
+               placeholder="tag1, tag2, …" style="margin-bottom:7px"
+               onkeydown="if(event.key==='Enter') doCasting()" />
+        <button class="panel-btn" onclick="doCasting()">Find VAs</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><div class="card-dot" style="background:#8b5cf6"></div>Character Discovery</div>
+        <input class="panel-input" id="character-input" type="text"
+               placeholder="角色名…" style="margin-bottom:7px"
+               onkeydown="if(event.key==='Enter') doCharacter()" />
+        <button class="panel-btn" onclick="doCharacter()">Explore</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><div class="card-dot" style="background:#ec4899"></div>Studio Style</div>
+        <input class="panel-input" id="studio-input" type="text"
+               placeholder="制作公司名…" style="margin-bottom:7px"
+               onkeydown="if(event.key==='Enter') doStudio()" />
+        <button class="panel-btn" onclick="doStudio()">Analyze</button>
+      </div>
+
+      <button class="panel-btn" onclick="clearGraph()" style="color:var(--muted)">Clear Graph</button>
+
+    </div>
+
+    <!-- Legend -->
+    <div id="legend">
+      <div class="leg"><div class="leg-dot" style="background:#1e293b"></div>Anime</div>
+      <div class="leg"><div class="leg-dot" style="background:#16a34a"></div>Character</div>
+      <div class="leg"><div class="leg-dot" style="background:#d97706"></div>Voice Actor</div>
+      <div class="leg"><div class="leg-dot" style="background:#94a3b8"></div>Tag</div>
+      <div class="leg"><div class="leg-dot" style="background:#7c3aed"></div>Studio</div>
+    </div>
+
+    <!-- Detail panel -->
+    <div id="detail">
+      <div id="detail-header">
+        <span class="detail-badge" id="detail-badge">Anime</span>
+        <button id="detail-close" onclick="closeDetail()">✕</button>
+      </div>
+      <div id="detail-name">—</div>
+      <div class="detail-rows" id="detail-rows"></div>
+      <div class="quick-actions">
+        <button class="qa-btn" id="qa-recommend" onclick="qaRecommend()">Recommend</button>
+        <button class="qa-btn" id="qa-series"    onclick="qaSeries()">Series</button>
+        <button class="qa-btn" id="qa-expand"    onclick="qaExpand()">Expand</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────
+// In production this points to Cloud Run. For local dev use localhost.
+const API = window.location.hostname === 'localhost'
+  ? 'http://localhost:8080'
+  : 'https://YOUR_CLOUD_RUN_URL';   // TODO: replace after deployment
+
+// ── Cytoscape init ────────────────────────────────────────────────
+const NODE_COLORS = {
+  Anime:       { bg: '#1e293b', border: '#2563eb' },
+  Character:   { bg: '#dcfce7', border: '#16a34a' },
+  VoiceActor:  { bg: '#fef3c7', border: '#d97706' },
+  Tag:         { bg: '#f8fafc', border: '#cbd5e1' },
+  Studio:      { bg: '#f3e8ff', border: '#7c3aed' },
+};
+
+const EDGE_COLORS = {
+  HAS_CHARACTER: '#cbd5e1',
+  VOICED_BY:     '#fbbf24',
+  HAS_TAG:       '#e2e8f0',
+  PRODUCED_BY:   '#c4b5fd',
+  RELATED_TO:    '#93c5fd',
+  // RELATED_TO group overrides (applied in JS)
+  main:     '#2563eb',
+  extra:    '#f59e0b',
+  skip:     '#94a3b8',
+  alt:      '#7c3aed',
+  universe: '#06b6d4',
+};
+
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  style: [
+    {
+      selector: 'node',
+      style: {
+        'label':            'data(label)',
+        'font-family':      'DM Sans, sans-serif',
+        'font-size':        '10px',
+        'font-weight':      '500',
+        'text-valign':      'center',
+        'text-halign':      'center',
+        'color':            '#1a1a18',
+        'background-color': ele => (NODE_COLORS[ele.data('type')] || NODE_COLORS.Anime).bg,
+        'border-color':     ele => (NODE_COLORS[ele.data('type')] || NODE_COLORS.Anime).border,
+        'border-width':     1.5,
+        'width':            ele => ele.data('type') === 'Anime' ? 52 : 38,
+        'height':           ele => ele.data('type') === 'Anime' ? 52 : 38,
+        'text-wrap':        'ellipsis',
+        'text-max-width':   '70px',
+      }
+    },
+    {
+      selector: 'node:selected',
+      style: {
+        'border-width':  3,
+        'border-color':  '#2563eb',
+        'box-shadow':    '0 0 0 4px rgba(37,99,235,0.15)',
+      }
+    },
+    {
+      selector: 'node.dimmed',
+      style: { opacity: 0.25 }
+    },
+    {
+      selector: 'edge',
+      style: {
+        'width':            1,
+        'line-color':       ele => {
+          const g = ele.data('group');
+          if (g && EDGE_COLORS[g]) return EDGE_COLORS[g];
+          return EDGE_COLORS[ele.data('label')] || '#e2e8f0';
+        },
+        'target-arrow-color': ele => {
+          const g = ele.data('group');
+          if (g && EDGE_COLORS[g]) return EDGE_COLORS[g];
+          return EDGE_COLORS[ele.data('label')] || '#e2e8f0';
+        },
+        'target-arrow-shape': 'triangle',
+        'arrow-scale':      0.7,
+        'curve-style':      'bezier',
+      }
+    },
+    {
+      selector: 'edge.dimmed',
+      style: { opacity: 0.08 }
+    },
+  ],
+  layout: { name: 'cose', animate: true, animationDuration: 400 },
+  minZoom: 0.1,
+  maxZoom: 3,
+});
+
+// ── State ─────────────────────────────────────────────────────────
+let selectedNode  = null;
+let expandedNodes = new Set();   // track which node ids have been expanded
+
+// ── Cytoscape events ──────────────────────────────────────────────
+cy.on('tap', 'node', evt => {
+  const node = evt.target;
+  selectNode(node);
+});
+
+cy.on('tap', evt => {
+  if (evt.target === cy) {
+    deselectAll();
+    closeDetail();
+  }
+});
+
+cy.on('dblclick', 'node', evt => {
+  const node = evt.target;
+  doExpand(node.data('raw_id'), node.data('type'), node.id());
+});
+
+// ── Graph helpers ─────────────────────────────────────────────────
+function selectNode(node) {
+  selectedNode = node;
+  cy.elements().removeClass('dimmed');
+  const neighborhood = node.closedNeighborhood();
+  cy.elements().not(neighborhood).addClass('dimmed');
+  node.select();
+  showDetail(node.data());
+}
+
+function deselectAll() {
+  selectedNode = null;
+  cy.elements().removeClass('dimmed');
+  cy.elements(':selected').unselect();
+}
+
+function clearGraph() {
+  cy.elements().remove();
+  expandedNodes.clear();
+  selectedNode = null;
+  closeDetail();
+  updateStats();
+  setBreadcrumb('搜索动漫开始探索');
+}
+
+function updateStats() {
+  document.getElementById('stat-nodes').textContent = cy.nodes().length;
+  document.getElementById('stat-edges').textContent = cy.edges().length;
+}
+
+function setBreadcrumb(text) {
+  document.getElementById('breadcrumb-text').textContent = text;
+}
+
+// ── Render graph data ─────────────────────────────────────────────
+function renderGraph(data, mode = 'replace') {
+  if (!data || !data.nodes) return;
+
+  if (mode === 'replace') {
+    cy.elements().remove();
+    expandedNodes.clear();
+  }
+
+  // De-duplicate: only add elements not already in graph
+  const toAdd = [];
+  data.nodes.forEach(n => {
+    if (!cy.getElementById(n.data.id).length) toAdd.push(n);
+  });
+  data.edges.forEach(e => {
+    if (!cy.getElementById(e.data.id).length) toAdd.push(e);
+  });
+
+  if (toAdd.length === 0) {
+    toast('已显示全部关联节点');
+    return;
+  }
+
+  cy.add(toAdd);
+  cy.layout({
+    name: 'cose',
+    animate: true,
+    animationDuration: 500,
+    fit: mode === 'replace',
+    padding: 40,
+    randomize: mode === 'replace',
+  }).run();
+
+  updateStats();
+}
+
+// ── API calls ─────────────────────────────────────────────────────
+async function apiFetch(path) {
+  const resp = await fetch(API + path);
+  if (!resp.ok) throw new Error(`API error ${resp.status}`);
+  return resp.json();
+}
+
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  try {
+    const data = await apiFetch(`/search?query=${encodeURIComponent(q)}`);
+    renderGraph(data, 'replace');
+    setBreadcrumb(`搜索：${q}`);
+  } catch (e) { toast('搜索失败，请检查后端连接'); }
+}
+
+async function doRecommend() {
+  const q = document.getElementById('recommend-input').value.trim();
+  if (!q) return;
+  const param = /^\d+$/.test(q) ? `id=${q}` : `name=${encodeURIComponent(q)}`;
+  try {
+    const data = await apiFetch(`/recommend?${param}`);
+    renderGraph(data, 'replace');
+    setBreadcrumb(`推荐：${q}`);
+  } catch (e) { toast('推荐失败'); }
+}
+
+async function doCasting() {
+  const tags = document.getElementById('casting-input').value.trim();
+  if (!tags) return;
+  try {
+    const data = await apiFetch(`/casting?tags=${encodeURIComponent(tags)}`);
+    renderGraph(data, 'replace');
+    setBreadcrumb(`声优选角：${tags}`);
+  } catch (e) { toast('查询失败'); }
+}
+
+async function doCharacter() {
+  const name = document.getElementById('character-input').value.trim();
+  if (!name) return;
+  try {
+    const data = await apiFetch(`/character?name=${encodeURIComponent(name)}`);
+    renderGraph(data, 'replace');
+    setBreadcrumb(`角色探索：${name}`);
+  } catch (e) { toast('查询失败'); }
+}
+
+async function doStudio() {
+  const name = document.getElementById('studio-input').value.trim();
+  if (!name) return;
+  try {
+    const data = await apiFetch(`/studio?name=${encodeURIComponent(name)}`);
+    renderGraph(data, 'replace');
+    setBreadcrumb(`工作室：${name}`);
+  } catch (e) { toast('查询失败'); }
+}
+
+async function doExpand(rawId, type, cyId) {
+  if (expandedNodes.has(cyId)) {
+    toast('已展开全部关联');
+    return;
+  }
+  try {
+    const data = await apiFetch(`/expand?id=${encodeURIComponent(rawId)}&type=${type}`);
+    renderGraph(data, 'append');
+    expandedNodes.add(cyId);
+    if (data.truncated) toast(`已展示前 30 个关联节点`);
+  } catch (e) { toast('展开失败'); }
+}
+
+// ── Detail panel ──────────────────────────────────────────────────
+function showDetail(data) {
+  const detail = document.getElementById('detail');
+  detail.classList.add('visible');
+
+  document.getElementById('detail-badge').textContent = data.type || 'Node';
+  document.getElementById('detail-name').textContent  = data.label || data.name || '—';
+
+  const rows = document.getElementById('detail-rows');
+  rows.innerHTML = '';
+
+  const fields = [
+    ['Score', data.score ? `${data.score}/10` : null, data.score],
+    ['Rank',  data.rank  ? `#${data.rank}`    : null, null],
+    ['Date',  data.date  || null, null],
+    ['Country', data.country || null, null],
+    ['Episodes', data.episodes || null, null],
+  ];
+
+  fields.forEach(([key, val, scoreVal]) => {
+    if (!val) return;
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    if (scoreVal) {
+      row.innerHTML = `
+        <span class="detail-key">${key}</span>
+        <div class="score-wrap">
+          <div class="score-track">
+            <div class="score-fill" style="width:${scoreVal*10}%"></div>
+          </div>
+          <span class="detail-val">${val}</span>
+        </div>`;
+    } else {
+      row.innerHTML = `
+        <span class="detail-key">${key}</span>
+        <span class="detail-val">${val}</span>`;
+    }
+    rows.appendChild(row);
+  });
+}
+
+function closeDetail() {
+  document.getElementById('detail').classList.remove('visible');
+  selectedNode = null;
+  cy.elements().removeClass('dimmed');
+  cy.elements(':selected').unselect();
+}
+
+// ── Quick Actions ─────────────────────────────────────────────────
+function qaRecommend() {
+  if (!selectedNode) return;
+  const raw = selectedNode.data('raw_id');
+  document.getElementById('recommend-input').value = raw;
+  doRecommend();
+}
+
+function qaSeries() {
+  if (!selectedNode) return;
+  const raw = selectedNode.data('raw_id');
+  apiFetch(`/relations?id=${raw}`).then(data => {
+    renderGraph(data, 'append');
+    setBreadcrumb(`系列：${selectedNode.data('label')}`);
+  }).catch(() => toast('查询系列失败'));
+}
+
+function qaExpand() {
+  if (!selectedNode) return;
+  doExpand(selectedNode.data('raw_id'), selectedNode.data('type'), selectedNode.id());
+}
+
+// ── Autocomplete ──────────────────────────────────────────────────
+let acTimer = null;
+
+function onSearchInput() {
+  clearTimeout(acTimer);
+  const q = document.getElementById('search-input').value.trim();
+  if (q.length < 1) { hideAC(); return; }
+  acTimer = setTimeout(async () => {
+    try {
+      const items = await apiFetch(`/autocomplete?q=${encodeURIComponent(q)}`);
+      showAC(items);
+    } catch { hideAC(); }
+  }, 250);
+}
+
+function onSearchKey(e) {
+  if (e.key === 'Enter') { hideAC(); doSearch(); }
+  if (e.key === 'Escape') hideAC();
+}
+
+function showAC(items) {
+  const list = document.getElementById('autocomplete-list');
+  if (!items.length) { hideAC(); return; }
+  list.innerHTML = items.map(it =>
+    `<div class="ac-item" onclick="selectAC('${it.display}')">${it.display}</div>`
+  ).join('');
+  list.style.display = 'block';
+}
+
+function hideAC() {
+  document.getElementById('autocomplete-list').style.display = 'none';
+}
+
+function selectAC(display) {
+  document.getElementById('search-input').value = display;
+  hideAC();
+  doSearch();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Initial load ──────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('search-input').focus();
+});
+</script>
+</body>
+</html>

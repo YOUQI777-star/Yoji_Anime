@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Environment
+.env
+*.env.local
+
+# Data files (large CSVs stay local)
+data/*.csv
+data/*.json
+data/*.db
+!data/.gitkeep
+
+# ChromaDB
+chroma_db/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Node (frontend tooling if any)
+node_modules/
+.vercel/
+
+# Logs
+*.log
