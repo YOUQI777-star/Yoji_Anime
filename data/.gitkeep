@@ -1,0 +1,2 @@
+# Data files are kept local only (gitignored)
+# Do not commit CSV files — they are large and contain private data

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOJI — Profile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    html, body { overflow: auto; height: auto; }
+  </style>
+</head>
+<body class="profile-page">
+
+<!-- ══════════════════════════════════════════════════
+     NAV
+══════════════════════════════════════════════════ -->
+<nav id="nav">
+  <a class="nav-logo" href="index.html">YOJI</a>
+  <div class="nav-sep"></div>
+  <span style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em">// USER PROFILE</span>
+  <div class="nav-right" id="nav-user"></div>
+</nav>
+
+<!-- ══════════════════════════════════════════════════
+     MAIN
+══════════════════════════════════════════════════ -->
+<div style="padding-top:var(--nav-h)">
+  <main class="profile-main" id="profile-main">
+    <!-- filled by JS -->
+    <div class="empty-state">LOADING…</div>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+/* ── Profile page logic ──────────────────────────── */
+
+async function loadProfile() {
+  const main = document.getElementById('profile-main');
+
+  if (!isLoggedIn()) {
+    main.innerHTML = `
+      <div class="empty-state" style="padding:48px">
+        NOT AUTHENTICATED
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" onclick="showAuthModal('login')">SIGN IN</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  try {
+    const [user, favsData] = await Promise.all([
+      apiFetch('/auth/me'),
+      apiFetch('/favorites')
+    ]);
+
+    // Update stored user
+    setUser(user);
+    renderNavUser();
+
+    const initial = (user.display_name || user.email || '?')[0].toUpperCase();
+    const since   = user.created_at ? user.created_at.slice(0, 10) : '—';
+    const pct     = Math.round((favsData.favorite_count / user.favorite_limit) * 100);
+
+    main.innerHTML = `
+      <!-- User card -->
+      <div class="profile-card">
+        <div class="profile-av">${initial}</div>
+        <div class="profile-info">
+          <div class="profile-name">${escHtml(user.display_name)}</div>
+          <div class="profile-email">${escHtml(user.email)}</div>
+          <div class="profile-since">MEMBER SINCE ${since}</div>
+        </div>
+        <div class="profile-actions">
+          <button class="btn btn-danger btn-sm" onclick="doLogout()">LOGOUT</button>
+        </div>
+      </div>
+
+      <!-- Favorites -->
+      <div class="fav-section">
+        <div class="fav-head">
+          <span class="fav-head-title">FAVORITES</span>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${favsData.favorite_count} / ${user.favorite_limit}</span>
+        </div>
+
+        <div class="fav-quota">${favsData.favorite_count} of ${user.favorite_limit} slots used</div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width:${pct}%"></div>
+        </div>
+
+        <div id="fav-lists">
+          ${renderFavGroup('ANIME', favsData.favorites.Anime || [])}
+          ${renderFavGroup('CHARACTER', favsData.favorites.Character || [])}
+          ${renderFavGroup('VOICE ACTOR', favsData.favorites.VoiceActor || [])}
+        </div>
+      </div>
+    `;
+
+  } catch (err) {
+    if (err.status === 401) {
+      clearAuth();
+      main.innerHTML = `
+        <div class="empty-state" style="padding:48px">
+          SESSION EXPIRED
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" onclick="showAuthModal('login')">SIGN IN AGAIN</button>
+          </div>
+        </div>`;
+    } else {
+      main.innerHTML = `<div class="empty-state">ERROR: ${escHtml(err.message)}</div>`;
+    }
+  }
+}
+
+function renderFavGroup(label, items) {
+  if (!items.length) return '';
+  return `
+    <div class="fav-group-label">${label} (${items.length})</div>
+    ${items.map(f => `
+      <div class="fav-item" id="fav-${f.favorite_id}">
+        <span class="fav-item-name"
+              onclick="goToGraph('${escHtml(f.item_type)}', '${escHtml(f.item_raw_id)}', '${escHtml(f.item_display_name)}')"
+              title="Open in graph">
+          ${escHtml(f.item_display_name)}
+        </span>
+        <span class="fav-item-date">${f.created_at.slice(0,10)}</span>
+        <button class="fav-item-del" onclick="deleteFav('${f.favorite_id}')" title="Remove">×</button>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function deleteFav(favId) {
+  try {
+    await apiFetch(`/favorites/${favId}`, { method: 'DELETE' });
+    const el = document.getElementById(`fav-${favId}`);
+    if (el) el.remove();
+    toast('REMOVED', 'ok');
+    // Reload to refresh counts
+    setTimeout(loadProfile, 600);
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function goToGraph(type, rawId, name) {
+  let q = '';
+  if (type === 'Anime') q = rawId;          // numeric id → search by id
+  else q = name;
+  window.location.href = `graph.html?q=${encodeURIComponent(q)}`;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+  initShared();
+  // Override onAuthSuccess so modal sign-in reloads profile
+  window.onAuthSuccess = () => loadProfile();
+  loadProfile();
+});
+</script>
+</body>
+</html>

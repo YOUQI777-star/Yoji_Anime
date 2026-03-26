@@ -18,7 +18,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # ─────────────────────────────────────────────────────────────
 load_dotenv()
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__)
 
 # 如果你后面要限制来源，可以把 "*" 改成你的 Vercel 域名
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -331,7 +331,7 @@ def normalize_favorite_payload(item_type, item_raw_id, item_display_name):
 # ─────────────────────────────────────────────────────────────
 @app.get("/")
 def home():
-    return render_template("index.html")
+    return jsonify({"service": "anime-kg-api", "status": "ok"})
 
 
 @app.get("/health")
