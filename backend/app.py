@@ -1,297 +1,1369 @@
-"""
-Anime Knowledge Graph — Flask Backend
-Deployed to Google Cloud Run.
-
-Endpoints:
-  GET  /health
-  GET  /search        ?query=<str>
-  GET  /expand        ?id=<raw_id>&type=<node_type>&limit=<int>
-  GET  /recommend     ?id=<int>|name=<str>
-  GET  /autocomplete  ?q=<str>
-  GET  /relations     ?id=<int>&group=<str>
-  GET  /cover         ?id=<int>
-  GET  /casting       ?tags=<csv>
-  GET  /character     ?name=<str>
-  GET  /studio        ?name=<str>
-  GET  /niche         ?pop=<int>&rich=<int>
-  POST /ask           {question, anime_id?}
-  POST /identify      multipart image
-"""
-
 import os
 import time
 import json
-
+import uuid
+import sqlite3
+import secrets
 import requests
-from flask import Flask, request, jsonify, Response, stream_with_context
+
+from datetime import datetime
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify, Response, stream_with_context, render_template
+from flask_cors import CORS
 from neo4j import GraphDatabase
+from werkzeug.security import generate_password_hash, check_password_hash
 
-app = Flask(__name__, static_folder="static", static_url_path="")
+# ─────────────────────────────────────────────────────────────
+# App setup
+# ─────────────────────────────────────────────────────────────
+load_dotenv()
 
-# ── Config from environment ───────────────────────────────────────
-NEO4J_URI      = os.environ["NEO4J_URI"]
-NEO4J_USER     = os.environ["NEO4J_USER"]
-NEO4J_PASSWORD = os.environ["NEO4J_PASSWORD"]
-BANGUMI_TOKEN  = os.environ.get("BANGUMI_TOKEN", "")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
-driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+# 如果你后面要限制来源，可以把 "*" 改成你的 Vercel 域名
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ── Constants ─────────────────────────────────────────────────────
-EXPAND_LIMIT     = 30
-COVER_TTL        = 3600          # seconds
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+BANGUMI_TOKEN = os.getenv("BANGUMI_TOKEN", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+PORT = int(os.getenv("PORT", 8080))
+
+if not NEO4J_URI or not NEO4J_USER or not NEO4J_PASSWORD:
+    raise ValueError("Missing Neo4j environment variables. Check backend/.env")
+
+driver = GraphDatabase.driver(
+    NEO4J_URI,
+    auth=(NEO4J_USER, NEO4J_PASSWORD)
+)
+
+COVER_TTL = 3600
+DEFAULT_LIMIT = 30
+MAX_LIMIT = 100
+SUPPORTED_DISPLAY_LANGS = {"cn", "ori"}
 EXPANDABLE_TYPES = {"Anime", "Character", "VoiceActor", "Tag", "Studio"}
+FAVORITE_TYPES = {"Anime", "Character", "VoiceActor"}
+FAVORITE_LIMIT = 10
 
-_cover_cache: dict = {}          # {anime_id: {"url": str|None, "ts": float}}
+_cover_cache = {}
 
-
-# ═══════════════════════════════════════════════════════════════════
-# Graph builder
-# ═══════════════════════════════════════════════════════════════════
-
-def _node_id(n) -> str:
-    """Stable unique element id:  Label:raw_db_id"""
-    label = list(n.labels)[0] if n.labels else "Unknown"
-    raw   = str(n.get("id")) if "id" in n else str(n.element_id)
-    return f"{label}:{raw}"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SQLITE_PATH = os.path.join(BASE_DIR, "user_data.db")
 
 
-def _node_data(n) -> dict:
-    label = list(n.labels)[0] if n.labels else "Unknown"
-    data  = {
-        "id":     _node_id(n),
-        "raw_id": str(n.get("id") or n.element_id),
-        "label":  n.get("name_cn") or n.get("name") or "Unknown",
-        "type":   label,
+# ─────────────────────────────────────────────────────────────
+# SQLite: users / sessions / favorites
+# ─────────────────────────────────────────────────────────────
+def get_db_conn():
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_sqlite():
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS favorites (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        item_type TEXT NOT NULL,
+        item_raw_id TEXT NOT NULL,
+        item_display_name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(user_id, item_type, item_raw_id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+init_sqlite()
+
+
+# ─────────────────────────────────────────────────────────────
+# General helpers
+# ─────────────────────────────────────────────────────────────
+def safe_limit(value, default=DEFAULT_LIMIT, max_limit=MAX_LIMIT):
+    try:
+        value = int(value)
+    except Exception:
+        value = default
+    if value < 1:
+        value = default
+    return min(value, max_limit)
+
+
+def safe_display_lang(value):
+    value = (value or "cn").strip().lower()
+    if value not in SUPPORTED_DISPLAY_LANGS:
+        return "cn"
+    return value
+
+
+def now_iso():
+    return datetime.utcnow().isoformat()
+
+
+def run_query(query, params=None):
+    with driver.session() as session:
+        result = session.run(query, params or {})
+        return [record.data() for record in result]
+
+
+def get_node_raw_id(node):
+    labels = list(node.labels)
+    label = labels[0] if labels else "Unknown"
+
+    if label in {"Anime", "Character"}:
+        return str(node.get("id"))
+    if label in {"VoiceActor", "Tag", "Studio", "Country"}:
+        return str(node.get("name"))
+    return str(node.element_id)
+
+
+def get_node_display_label(node, display_lang="cn"):
+    labels = list(node.labels)
+    label = labels[0] if labels else "Unknown"
+
+    if label in {"Anime", "Character"}:
+        if display_lang == "ori":
+            return node.get("name") or node.get("name_cn") or "Unknown"
+        return node.get("name_cn") or node.get("name") or "Unknown"
+
+    return node.get("name_cn") or node.get("name") or "Unknown"
+
+
+def build_node_data(node, display_lang="cn"):
+    labels = list(node.labels)
+    label = labels[0] if labels else "Unknown"
+    raw_id = get_node_raw_id(node)
+
+    data = {
+        "id": f"{label}:{raw_id}",
+        "raw_id": raw_id,
+        "type": label,
+        "label": get_node_display_label(node, display_lang),
+        "display_lang": display_lang,
     }
-    for key in ("score", "rank", "date", "episodes", "country",
-                "platform", "studio", "director", "summary", "name", "name_cn"):
-        val = n.get(key)
-        if val is not None:
-            data[key] = val
+
+    for key in [
+        "name", "name_cn", "score", "rank", "date",
+        "episodes", "platform", "director", "summary"
+    ]:
+        if key in node and node.get(key) is not None:
+            data[key] = node.get(key)
+
     return data
 
 
-def build_graph(cypher: str, params: dict) -> dict:
-    """Run a Cypher query and return {nodes, edges} for Cytoscape.js."""
-    nodes: dict = {}
-    edges: list = []
-    seen_edges: set = set()
+def build_graph_from_records(records, display_lang="cn"):
+    nodes = {}
+    edges = {}
 
+    for record in records:
+        for value in record.values():
+            if value is None:
+                continue
+
+            if hasattr(value, "labels"):
+                node_data = build_node_data(value, display_lang)
+                nodes[node_data["id"]] = {"data": node_data}
+
+            elif hasattr(value, "type") and hasattr(value, "start_node") and hasattr(value, "end_node"):
+                start_node = value.start_node
+                end_node = value.end_node
+
+                start_data = build_node_data(start_node, display_lang)
+                end_data = build_node_data(end_node, display_lang)
+
+                nodes[start_data["id"]] = {"data": start_data}
+                nodes[end_data["id"]] = {"data": end_data}
+
+                edge_id = f'{start_data["id"]}-{value.type}-{end_data["id"]}'
+                if edge_id not in edges:
+                    edge_payload = {
+                        "id": edge_id,
+                        "source": start_data["id"],
+                        "target": end_data["id"],
+                        "label": value.type,
+                    }
+
+                    for prop in ["relation", "relation_type", "same_series", "group"]:
+                        try:
+                            prop_val = value.get(prop)
+                            if prop_val is not None:
+                                edge_payload[prop] = prop_val
+                        except Exception:
+                            pass
+
+                    edges[edge_id] = {"data": edge_payload}
+
+    return {
+        "nodes": list(nodes.values()),
+        "edges": list(edges.values())
+    }
+
+
+def graph_query(query, params=None, display_lang="cn"):
     with driver.session() as session:
-        for record in session.run(cypher, **params):
-            for v in record.values():
-                if v is None:
-                    continue
-                # Node
-                if hasattr(v, "labels"):
-                    nid = _node_id(v)
-                    if nid not in nodes:
-                        nodes[nid] = {"data": _node_data(v)}
-                # Relationship
-                elif hasattr(v, "type") and hasattr(v, "start_node") and hasattr(v, "end_node"):
-                    src = _node_id(v.start_node)
-                    tgt = _node_id(v.end_node)
-                    for nd, node in ((src, v.start_node), (tgt, v.end_node)):
-                        if nd not in nodes:
-                            nodes[nd] = {"data": _node_data(node)}
-                    eid = f"{src}-{v.type}-{tgt}"
-                    if eid not in seen_edges:
-                        seen_edges.add(eid)
-                        rel_data = {"id": eid, "source": src,
-                                    "target": tgt, "label": v.type}
-                        for prop in ("relation_type", "same_series", "group"):
-                            val = v.get(prop)
-                            if val is not None:
-                                rel_data[prop] = val
-                        edges.append({"data": rel_data})
-
-    return {"nodes": list(nodes.values()), "edges": edges}
+        records = list(session.run(query, params or {}))
+        return build_graph_from_records(records, display_lang)
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Routes
-# ═══════════════════════════════════════════════════════════════════
+def resolve_anime_id_by_name(name):
+    if not name:
+        return None
 
+    query = """
+    MATCH (a:Anime)
+    WHERE toLower(coalesce(a.name, "")) CONTAINS toLower($q)
+       OR toLower(coalesce(a.name_cn, "")) CONTAINS toLower($q)
+    RETURN a.id AS id,
+           a.name AS name,
+           a.name_cn AS name_cn,
+           a.rank AS rank
+    ORDER BY
+      CASE
+        WHEN toLower(coalesce(a.name_cn, "")) = toLower($q) THEN 0
+        WHEN toLower(coalesce(a.name, "")) = toLower($q) THEN 1
+        ELSE 2
+      END,
+      a.rank ASC
+    LIMIT 1
+    """
+    rows = run_query(query, {"q": name})
+    return rows[0]["id"] if rows else None
+
+
+def get_authorized_user():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header.replace("Bearer ", "", 1).strip()
+    if not token:
+        return None
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    SELECT u.id, u.email, u.display_name, u.created_at
+    FROM user_sessions s
+    JOIN users u ON s.user_id = u.id
+    WHERE s.token = ?
+    """, (token,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "display_name": row["display_name"],
+        "created_at": row["created_at"],
+        "token": token
+    }
+
+
+def auth_required():
+    user = get_authorized_user()
+    if not user:
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    return user, None
+
+
+def count_user_favorites(user_id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS cnt FROM favorites WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+
+def normalize_favorite_payload(item_type, item_raw_id, item_display_name):
+    item_type = (item_type or "").strip()
+    item_raw_id = str(item_raw_id or "").strip()
+    item_display_name = (item_display_name or "").strip()
+
+    if item_type not in FAVORITE_TYPES:
+        return None, "invalid item_type"
+    if not item_raw_id:
+        return None, "missing item_raw_id"
+    if not item_display_name:
+        return None, "missing item_display_name"
+
+    return {
+        "item_type": item_type,
+        "item_raw_id": item_raw_id,
+        "item_display_name": item_display_name
+    }, None
+
+
+# ─────────────────────────────────────────────────────────────
+# Basic routes
+# ─────────────────────────────────────────────────────────────
 @app.get("/")
 def home():
-    return jsonify({"service": "anime-kg-api", "status": "ok"})
+    return render_template("index.html")
 
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({
+        "service": "anime-kg-api",
+        "status": "ok"
+    })
 
 
-# ── /search ──────────────────────────────────────────────────────
+@app.get("/db-health")
+def db_health():
+    rows = run_query("MATCH (a:Anime) RETURN count(a) AS anime_count")
+    return jsonify({
+        "status": "ok",
+        "database": "connected",
+        "result": rows
+    })
+
+
+# ─────────────────────────────────────────────────────────────
+# Auth / User Home backend
+# ─────────────────────────────────────────────────────────────
+@app.post("/auth/register")
+def register():
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    display_name = (body.get("display_name") or "").strip()
+
+    if not email or not password:
+        return jsonify({"error": "email and password are required"}), 400
+
+    if not display_name:
+        display_name = email.split("@")[0]
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        return jsonify({"error": "email already registered"}), 409
+
+    user_id = str(uuid.uuid4())
+    token = secrets.token_urlsafe(32)
+
+    cur.execute("""
+    INSERT INTO users (id, email, password_hash, display_name, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    """, (
+        user_id,
+        email,
+        generate_password_hash(password),
+        display_name,
+        now_iso()
+    ))
+
+    cur.execute("""
+    INSERT INTO user_sessions (token, user_id, created_at)
+    VALUES (?, ?, ?)
+    """, (
+        token,
+        user_id,
+        now_iso()
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "message": "registered",
+        "token": token,
+        "user": {
+            "id": user_id,
+            "email": email,
+            "display_name": display_name,
+            "favorite_limit": FAVORITE_LIMIT,
+            "favorite_count": 0
+        }
+    })
+
+
+@app.post("/auth/login")
+def login():
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "email and password are required"}), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    SELECT id, email, display_name, password_hash, created_at
+    FROM users
+    WHERE email = ?
+    """, (email,))
+    row = cur.fetchone()
+
+    if not row or not check_password_hash(row["password_hash"], password):
+        conn.close()
+        return jsonify({"error": "invalid credentials"}), 401
+
+    token = secrets.token_urlsafe(32)
+    cur.execute("""
+    INSERT INTO user_sessions (token, user_id, created_at)
+    VALUES (?, ?, ?)
+    """, (token, row["id"], now_iso()))
+    conn.commit()
+    conn.close()
+
+    favorite_count = count_user_favorites(row["id"])
+
+    return jsonify({
+        "message": "logged in",
+        "token": token,
+        "user": {
+            "id": row["id"],
+            "email": row["email"],
+            "display_name": row["display_name"],
+            "created_at": row["created_at"],
+            "favorite_limit": FAVORITE_LIMIT,
+            "favorite_count": favorite_count
+        }
+    })
+
+
+@app.post("/auth/logout")
+def logout():
+    user, error = auth_required()
+    if error:
+        return error
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM user_sessions WHERE token = ?", (user["token"],))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "logged out"})
+
+
+@app.get("/auth/me")
+def me():
+    user, error = auth_required()
+    if error:
+        return error
+
+    favorite_count = count_user_favorites(user["id"])
+
+    return jsonify({
+        "id": user["id"],
+        "email": user["email"],
+        "display_name": user["display_name"],
+        "created_at": user["created_at"],
+        "favorite_limit": FAVORITE_LIMIT,
+        "favorite_count": favorite_count
+    })
+
+
+@app.get("/favorites")
+def list_favorites():
+    user, error = auth_required()
+    if error:
+        return error
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    SELECT id, item_type, item_raw_id, item_display_name, created_at
+    FROM favorites
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+    """, (user["id"],))
+    rows = cur.fetchall()
+    conn.close()
+
+    grouped = {
+        "Anime": [],
+        "Character": [],
+        "VoiceActor": []
+    }
+
+    for row in rows:
+        grouped[row["item_type"]].append({
+            "favorite_id": row["id"],
+            "item_type": row["item_type"],
+            "item_raw_id": row["item_raw_id"],
+            "item_display_name": row["item_display_name"],
+            "created_at": row["created_at"]
+        })
+
+    return jsonify({
+        "favorite_limit": FAVORITE_LIMIT,
+        "favorite_count": len(rows),
+        "favorites": grouped
+    })
+
+
+@app.post("/favorites")
+def add_favorite():
+    user, error = auth_required()
+    if error:
+        return error
+
+    body = request.get_json(silent=True) or {}
+    normalized, err = normalize_favorite_payload(
+        body.get("item_type"),
+        body.get("item_raw_id"),
+        body.get("item_display_name")
+    )
+    if err:
+        return jsonify({"error": err}), 400
+
+    current_count = count_user_favorites(user["id"])
+    if current_count >= FAVORITE_LIMIT:
+        return jsonify({
+            "error": "favorite limit reached",
+            "favorite_limit": FAVORITE_LIMIT
+        }), 400
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+    favorite_id = str(uuid.uuid4())
+
+    try:
+        cur.execute("""
+        INSERT INTO favorites (id, user_id, item_type, item_raw_id, item_display_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            favorite_id,
+            user["id"],
+            normalized["item_type"],
+            normalized["item_raw_id"],
+            normalized["item_display_name"],
+            now_iso()
+        ))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"error": "already favorited"}), 409
+
+    conn.close()
+
+    return jsonify({
+        "message": "favorited",
+        "favorite_id": favorite_id,
+        "favorite_count": current_count + 1,
+        "favorite_limit": FAVORITE_LIMIT
+    })
+
+
+@app.delete("/favorites/<favorite_id>")
+def delete_favorite(favorite_id):
+    user, error = auth_required()
+    if error:
+        return error
+
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    DELETE FROM favorites
+    WHERE id = ? AND user_id = ?
+    """, (favorite_id, user["id"]))
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+
+    if deleted == 0:
+        return jsonify({"error": "favorite not found"}), 404
+
+    return jsonify({
+        "message": "favorite removed",
+        "favorite_count": count_user_favorites(user["id"]),
+        "favorite_limit": FAVORITE_LIMIT
+    })
+
+
+# ─────────────────────────────────────────────────────────────
+# Search / autocomplete / tags
+# ─────────────────────────────────────────────────────────────
 @app.get("/search")
 def search():
-    query = request.args.get("query", "").strip()
-    if not query:
-        return jsonify({"nodes": [], "edges": [], "error": "empty query"}), 400
+    query_text = request.args.get("query", "").strip()
+    limit = safe_limit(request.args.get("limit", DEFAULT_LIMIT))
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+    scope = (request.args.get("scope") or "all").strip().lower()
 
-    if query.isdigit():
+    if not query_text:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "error": "empty query"
+        }), 400
+
+    if query_text.isdigit() and scope in {"all", "anime"}:
         cypher = """
-        MATCH (a:Anime {id: $id})
+        MATCH (a:Anime {id: toInteger($id)})
         OPTIONAL MATCH (a)-[r]-(n)
-        RETURN a, r, n LIMIT 200
+        RETURN a, r, n
+        LIMIT $limit
         """
-        return jsonify(build_graph(cypher, {"id": int(query)}))
+        return jsonify(graph_query(
+            cypher,
+            {"id": query_text, "limit": limit},
+            display_lang=display_lang
+        ))
 
-    cypher = """
-    CALL {
+    union_parts = []
+
+    if scope in {"all", "anime"}:
+        union_parts.append("""
         MATCH (a:Anime)
-        WHERE a.name CONTAINS $q OR a.name_cn CONTAINS $q
+        WHERE toLower(coalesce(a.name, "")) CONTAINS toLower($q)
+           OR toLower(coalesce(a.name_cn, "")) CONTAINS toLower($q)
         RETURN a AS n
-        UNION ALL
+        """)
+
+    if scope in {"all", "character"}:
+        union_parts.append("""
         MATCH (c:Character)
-        WHERE c.name CONTAINS $q OR c.name_cn CONTAINS $q
+        WHERE toLower(coalesce(c.name, "")) CONTAINS toLower($q)
+           OR toLower(coalesce(c.name_cn, "")) CONTAINS toLower($q)
         RETURN c AS n
-        UNION ALL
+        """)
+
+    if scope in {"all", "va", "voiceactor"}:
+        union_parts.append("""
         MATCH (v:VoiceActor)
-        WHERE v.name CONTAINS $q OR v.name_cn CONTAINS $q
+        WHERE toLower(coalesce(v.name, "")) CONTAINS toLower($q)
         RETURN v AS n
-    }
+        """)
+
+    if not union_parts:
+        return jsonify({"nodes": [], "edges": [], "error": "invalid scope"}), 400
+
+    cypher = f"""
+    CALL {{
+        {" UNION ".join(union_parts)}
+    }}
     WITH DISTINCT n
     OPTIONAL MATCH (n)-[r]-(m)
-    RETURN n, r, m LIMIT 200
+    RETURN n, r, m
+    LIMIT $limit
     """
-    return jsonify(build_graph(cypher, {"q": query}))
+
+    return jsonify(graph_query(
+        cypher,
+        {"q": query_text, "limit": limit},
+        display_lang=display_lang
+    ))
 
 
-# ── /expand ──────────────────────────────────────────────────────
-@app.get("/expand")
-def expand():
-    """Progressive graph traversal — 1-hop expansion of a selected node."""
-    raw_id    = request.args.get("id",    "").strip()
-    node_type = request.args.get("type",  "").strip()
-    limit     = request.args.get("limit", EXPAND_LIMIT, type=int)
-
-    if not raw_id or not node_type:
-        return jsonify({"nodes": [], "edges": [], "error": "missing id or type"}), 400
-    if node_type not in EXPANDABLE_TYPES:
-        return jsonify({"nodes": [], "edges": [],
-                        "error": f"unsupported type: {node_type}"}), 400
-
-    try:    db_id = int(raw_id)
-    except: db_id = raw_id          # Tag / Studio use name as id
-
-    queries = {
-        "Anime": """
-            MATCH (a:Anime {id: $id})
-            OPTIONAL MATCH (a)-[r1:HAS_CHARACTER]->(c:Character)
-            OPTIONAL MATCH (a)-[r2:HAS_TAG]->(t:Tag)
-            OPTIONAL MATCH (a)-[r3:PRODUCED_BY]->(s:Studio)
-            OPTIONAL MATCH (a)-[r4:RELATED_TO]->(b:Anime)
-            RETURN a, r1, c, r2, t, r3, s, r4, b LIMIT $limit
-        """,
-        "Character": """
-            MATCH (c:Character {id: $id})
-            OPTIONAL MATCH (c)-[r1:VOICED_BY]->(v:VoiceActor)
-            OPTIONAL MATCH (a:Anime)-[r2:HAS_CHARACTER]->(c)
-            RETURN c, r1, v, r2, a LIMIT $limit
-        """,
-        "VoiceActor": """
-            MATCH (v:VoiceActor {id: $id})
-            OPTIONAL MATCH (c:Character)-[r1:VOICED_BY]->(v)
-            OPTIONAL MATCH (a:Anime)-[r2:HAS_CHARACTER]->(c)
-            RETURN v, r1, c, r2, a LIMIT $limit
-        """,
-        "Tag": """
-            MATCH (t:Tag {name: $id})
-            OPTIONAL MATCH (a:Anime)-[r:HAS_TAG]->(t)
-            RETURN t, r, a LIMIT $limit
-        """,
-        "Studio": """
-            MATCH (s:Studio {name: $id})
-            OPTIONAL MATCH (a:Anime)-[r:PRODUCED_BY]->(s)
-            RETURN s, r, a LIMIT $limit
-        """,
-    }
-
-    result = build_graph(queries[node_type], {"id": db_id, "limit": limit})
-    result["truncated"] = (len(result["nodes"]) >= limit)
-    return jsonify(result)
-
-
-# ── /recommend ───────────────────────────────────────────────────
-@app.get("/recommend")
-def recommend():
-    anime_id   = request.args.get("id",   type=int)
-    anime_name = request.args.get("name", "").strip()
-
-    if not anime_id and anime_name:
-        with driver.session() as session:
-            rec = session.run(
-                "MATCH (a:Anime) WHERE a.name CONTAINS $q OR a.name_cn CONTAINS $q "
-                "RETURN a.id AS id LIMIT 1", q=anime_name
-            ).single()
-            if rec:
-                anime_id = rec["id"]
-
-    if not anime_id:
-        return jsonify({"nodes": [], "edges": []}), 400
-
-    cypher = """
-    MATCH (target:Anime {id: $id})
-    OPTIONAL MATCH (target)-[:HAS_TAG]->(t:Tag)<-[:HAS_TAG]-(rec:Anime)
-    WITH target, rec, count(DISTINCT t) AS tagScore
-    WHERE rec IS NOT NULL AND rec.id <> $id
-    OPTIONAL MATCH (target)-[:HAS_CHARACTER]->(:Character)-[:VOICED_BY]->(va:VoiceActor)
-               <-[:VOICED_BY]-(:Character)<-[:HAS_CHARACTER]-(rec)
-    WITH target, rec, tagScore, count(DISTINCT va) AS vaScore
-    OPTIONAL MATCH (target)-[:PRODUCED_BY]->(st:Studio)<-[:PRODUCED_BY]-(rec)
-    WITH target, rec, tagScore * 2 + vaScore * 3 + count(DISTINCT st) AS score
-    ORDER BY score DESC LIMIT 10
-    OPTIONAL MATCH (target)-[r1]-(x)
-    OPTIONAL MATCH (rec)-[r2]-(y)
-    RETURN target, rec, r1, x, r2, y LIMIT 300
-    """
-    return jsonify(build_graph(cypher, {"id": anime_id}))
-
-
-# ── /autocomplete ─────────────────────────────────────────────────
 @app.get("/autocomplete")
 def autocomplete():
     q = request.args.get("q", "").strip()
-    if len(q) < 1:
+    if not q:
         return jsonify([])
-    with driver.session() as session:
-        rows = session.run(
-            "MATCH (a:Anime) WHERE a.name CONTAINS $q OR a.name_cn CONTAINS $q "
-            "RETURN a.id AS id, a.name AS name, a.name_cn AS name_cn LIMIT 10", q=q
+
+    query = """
+    MATCH (a:Anime)
+    WHERE toLower(coalesce(a.name, "")) CONTAINS toLower($q)
+       OR toLower(coalesce(a.name_cn, "")) CONTAINS toLower($q)
+    RETURN a.id AS id, a.name AS name, a.name_cn AS name_cn, a.rank AS rank
+    ORDER BY a.rank ASC
+    LIMIT 10
+    """
+    rows = run_query(query, {"q": q})
+
+    return jsonify([
+        {
+            "id": row["id"],
+            "name": row["name"] or "",
+            "name_cn": row["name_cn"] or "",
+            "display": row["name_cn"] or row["name"] or ""
+        }
+        for row in rows
+    ])
+
+
+@app.get("/tags")
+def tags():
+    q = request.args.get("q", "").strip()
+    limit = safe_limit(request.args.get("limit", 50), default=50, max_limit=200)
+
+    if q:
+        query = """
+        MATCH (t:Tag)
+        WHERE toLower(coalesce(t.name, "")) CONTAINS toLower($q)
+        RETURN t.name AS name, count { (a:Anime)-[:HAS_TAG]->(t) } AS usage_count
+        ORDER BY usage_count DESC, name ASC
+        LIMIT $limit
+        """
+        rows = run_query(query, {"q": q, "limit": limit})
+    else:
+        query = """
+        MATCH (t:Tag)
+        RETURN t.name AS name, count { (a:Anime)-[:HAS_TAG]->(t) } AS usage_count
+        ORDER BY usage_count DESC, name ASC
+        LIMIT $limit
+        """
+        rows = run_query(query, {"limit": limit})
+
+    return jsonify({
+        "tags": rows
+    })
+
+
+# ─────────────────────────────────────────────────────────────
+# Anime detail
+# ─────────────────────────────────────────────────────────────
+@app.get("/anime")
+def anime_detail():
+    anime_id = request.args.get("id", type=int)
+    name = request.args.get("name", "").strip()
+
+    if not anime_id and name:
+        anime_id = resolve_anime_id_by_name(name)
+
+    if not anime_id:
+        return jsonify({"error": "missing id or name"}), 400
+
+    query = """
+    MATCH (a:Anime {id: $id})
+    OPTIONAL MATCH (a)-[:HAS_TAG]->(t:Tag)
+    OPTIONAL MATCH (a)-[:HAS_CHARACTER]->(c:Character)
+    OPTIONAL MATCH (c)-[:VOICED_BY]->(v:VoiceActor)
+    OPTIONAL MATCH (a)-[:PRODUCED_BY]->(s:Studio)
+    OPTIONAL MATCH (a)-[:ORIGIN_COUNTRY]->(country:Country)
+    OPTIONAL MATCH (a)-[rel:RELATED_TO]->(b:Anime)
+    RETURN
+      a.id AS id,
+      a.name AS name,
+      a.name_cn AS name_cn,
+      a.date AS date,
+      a.platform AS platform,
+      a.score AS score,
+      a.rank AS rank,
+      a.episodes AS episodes,
+      a.director AS director,
+      a.summary AS summary,
+      collect(DISTINCT t.name) AS tags,
+      collect(DISTINCT c.name) AS character_names,
+      collect(DISTINCT c.name_cn) AS character_names_cn,
+      collect(DISTINCT v.name) AS voice_actors,
+      collect(DISTINCT s.name) AS studios,
+      collect(DISTINCT country.name) AS countries,
+      collect(DISTINCT {
+        target_id: b.id,
+        target_name: b.name,
+        target_name_cn: b.name_cn,
+        relation_type: rel.relation_type,
+        same_series: rel.same_series,
+        group: rel.group
+      }) AS relations
+    """
+    rows = run_query(query, {"id": anime_id})
+
+    if not rows:
+        return jsonify({"error": "anime not found"}), 404
+
+    return jsonify(rows[0])
+
+
+# ─────────────────────────────────────────────────────────────
+# Expand
+# ─────────────────────────────────────────────────────────────
+@app.get("/expand")
+def expand():
+    raw_id = request.args.get("id", "").strip()
+    node_type = request.args.get("type", "").strip()
+    limit = safe_limit(request.args.get("limit", DEFAULT_LIMIT))
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+
+    if not raw_id or not node_type:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "error": "missing id or type"
+        }), 400
+
+    if node_type not in EXPANDABLE_TYPES:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "error": f"unsupported type: {node_type}"
+        }), 400
+
+    if node_type == "Anime":
+        cypher = """
+        MATCH (a:Anime {id: toInteger($id)})
+        OPTIONAL MATCH (a)-[r1:HAS_CHARACTER]->(c:Character)
+        OPTIONAL MATCH (a)-[r2:HAS_TAG]->(t:Tag)
+        OPTIONAL MATCH (a)-[r3:RELATED_TO]->(b:Anime)
+        OPTIONAL MATCH (a)-[r4:PRODUCED_BY]->(s:Studio)
+        OPTIONAL MATCH (a)-[r5:ORIGIN_COUNTRY]->(country:Country)
+        RETURN a, r1, c, r2, t, r3, b, r4, s, r5, country
+        LIMIT 300
+        """
+        result = graph_query(
+            cypher,
+            {"id": raw_id},
+            display_lang=display_lang
         )
-        return jsonify([{
-            "id": r["id"], "name": r["name"] or "",
-            "name_cn": r["name_cn"] or "",
-            "display": r["name_cn"] or r["name"] or ""
-        } for r in rows])
+
+        # 后端统一做“分类型配额”裁剪，保证图谱更均衡
+        all_nodes = result["nodes"]
+        all_edges = result["edges"]
+
+        center_nodes = [
+            n for n in all_nodes
+            if n["data"]["type"] == "Anime" and n["data"]["raw_id"] == str(raw_id)
+        ]
+
+        other_nodes = [
+            n for n in all_nodes
+            if not (n["data"]["type"] == "Anime" and n["data"]["raw_id"] == str(raw_id))
+        ]
+
+        characters = [n for n in other_nodes if n["data"]["type"] == "Character"]
+        tags = [n for n in other_nodes if n["data"]["type"] == "Tag"]
+        related_anime = [n for n in other_nodes if n["data"]["type"] == "Anime"]
+        studios = [n for n in other_nodes if n["data"]["type"] == "Studio"]
+        countries = [n for n in other_nodes if n["data"]["type"] == "Country"]
+        others = [
+            n for n in other_nodes
+            if n["data"]["type"] not in {"Character", "Tag", "Anime", "Studio", "Country"}
+        ]
+
+        # 每类节点排序，保证输出稳定
+        for group in [characters, tags, related_anime, studios, countries, others]:
+            group.sort(key=lambda x: x["data"]["label"])
+
+        remaining = max(0, limit - len(center_nodes))
+
+        char_cap = min(len(characters), max(5, remaining // 2))
+        tag_cap = min(len(tags), max(3, remaining // 5))
+        rel_cap = min(len(related_anime), max(3, remaining // 5))
+        studio_cap = min(len(studios), 3)
+        country_cap = min(len(countries), 2)
+
+        selected = []
+        selected.extend(characters[:char_cap])
+        selected.extend(tags[:tag_cap])
+        selected.extend(related_anime[:rel_cap])
+        selected.extend(studios[:studio_cap])
+        selected.extend(countries[:country_cap])
+
+        # 如果还有剩余名额，再按顺序补充
+        selected_ids = {n["data"]["id"] for n in selected}
+        leftover = [
+            n for n in (characters + tags + related_anime + studios + countries + others)
+            if n["data"]["id"] not in selected_ids
+        ]
+
+        slots_left = max(0, remaining - len(selected))
+        selected.extend(leftover[:slots_left])
+
+        kept_nodes = center_nodes + selected
+        kept_node_ids = {n["data"]["id"] for n in kept_nodes}
+
+        kept_edges = [
+            e for e in all_edges
+            if e["data"]["source"] in kept_node_ids and e["data"]["target"] in kept_node_ids
+        ]
+
+        result = {
+            "nodes": kept_nodes,
+            "edges": kept_edges,
+            "requested_limit": limit,
+            "display_lang": display_lang
+        }
+        return jsonify(result)
+
+    if node_type == "Character":
+        cypher = """
+        MATCH (c:Character {id: $id})
+        OPTIONAL MATCH (a:Anime)-[r1:HAS_CHARACTER]->(c)
+        OPTIONAL MATCH (c)-[r2:VOICED_BY]->(v:VoiceActor)
+        RETURN c, r1, a, r2, v
+        LIMIT $limit
+        """
+        return jsonify(graph_query(
+            cypher,
+            {"id": raw_id, "limit": limit},
+            display_lang=display_lang
+        ))
+
+    if node_type == "VoiceActor":
+        cypher = """
+        MATCH (v:VoiceActor {name: $id})
+        OPTIONAL MATCH (c:Character)-[r1:VOICED_BY]->(v)
+        OPTIONAL MATCH (a:Anime)-[r2:HAS_CHARACTER]->(c)
+        RETURN v, r1, c, r2, a
+        LIMIT $limit
+        """
+        return jsonify(graph_query(
+            cypher,
+            {"id": raw_id, "limit": limit},
+            display_lang=display_lang
+        ))
+
+    if node_type == "Tag":
+        cypher = """
+        MATCH (t:Tag {name: $id})
+        OPTIONAL MATCH (a:Anime)-[r:HAS_TAG]->(t)
+        RETURN t, r, a
+        LIMIT $limit
+        """
+        return jsonify(graph_query(
+            cypher,
+            {"id": raw_id, "limit": limit},
+            display_lang=display_lang
+        ))
+
+    if node_type == "Studio":
+        cypher = """
+        MATCH (s:Studio {name: $id})
+        OPTIONAL MATCH (a:Anime)-[r:PRODUCED_BY]->(s)
+        RETURN s, r, a
+        LIMIT $limit
+        """
+        return jsonify(graph_query(
+            cypher,
+            {"id": raw_id, "limit": limit},
+            display_lang=display_lang
+        ))
+
+    return jsonify({
+        "nodes": [],
+        "edges": [],
+        "error": "unsupported type"
+    }), 400
+
+# ─────────────────────────────────────────────────────────────
+# Recommend / relations / explanations
+# ─────────────────────────────────────────────────────────────
+@app.get("/recommend")
+def recommend():
+    anime_id = request.args.get("id", type=int)
+    anime_name = request.args.get("name", "").strip()
+    limit = safe_limit(request.args.get("limit", 10), default=10, max_limit=30)
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+
+    if not anime_id and anime_name:
+        anime_id = resolve_anime_id_by_name(anime_name)
+
+    if not anime_id:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "recommendations": [],
+            "error": "missing id or name"
+        }), 400
+
+    explanation_query = """
+    MATCH (target:Anime {id: $id})
+    MATCH (rec:Anime)
+    WHERE rec.id <> target.id
+
+      AND NOT EXISTS {
+        MATCH (target)-[r:RELATED_TO]-(rec)
+        WHERE coalesce(r.same_series, 0) = 1
+      }
+
+      AND NOT EXISTS {
+        MATCH (target)-[r:RELATED_TO]-(rec)
+        WHERE toLower(coalesce(r.relation_type, "")) IN [
+          "sequel", "prequel", "spinoff", "side story", "side_story",
+          "movie", "film", "theatrical", "ova", "oad", "special",
+          "season", "part", "chapter"
+        ]
+           OR toLower(coalesce(r.group, "")) IN [
+          "sequel", "prequel", "spinoff", "side story", "side_story",
+          "movie", "film", "theatrical", "ova", "oad", "special",
+          "season", "part", "chapter"
+        ]
+      }
+
+    OPTIONAL MATCH (target)-[:HAS_TAG]->(t:Tag)<-[:HAS_TAG]-(rec)
+    WITH target, rec, count(DISTINCT t) AS shared_tags
+
+    OPTIONAL MATCH (target)-[:HAS_CHARACTER]->(:Character)-[:VOICED_BY]->(va:VoiceActor)
+                   <-[:VOICED_BY]-(:Character)<-[:HAS_CHARACTER]-(rec)
+    WITH target, rec, shared_tags, count(DISTINCT va) AS shared_voice_actors
+
+    OPTIONAL MATCH (target)-[:PRODUCED_BY]->(s:Studio)<-[:PRODUCED_BY]-(rec)
+    WITH target, rec, shared_tags, shared_voice_actors, count(DISTINCT s) AS shared_studios
+
+    WITH target, rec,
+         shared_tags,
+         shared_voice_actors,
+         shared_studios,
+         shared_tags * 2 + shared_voice_actors * 3 + shared_studios AS final_score
+    WHERE final_score > 0
+    RETURN
+      rec.id AS id,
+      rec.name AS name,
+      rec.name_cn AS name_cn,
+      rec.rank AS rank,
+      rec.score AS score,
+      shared_tags,
+      shared_voice_actors,
+      shared_studios,
+      final_score
+    ORDER BY final_score DESC, rec.rank ASC
+    LIMIT $limit
+    """
+    recommendations = run_query(explanation_query, {"id": anime_id, "limit": limit})
+
+    if not recommendations:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "recommendations": []
+        })
+
+    rec_ids = [row["id"] for row in recommendations]
+
+    graph_query_text = """
+    MATCH (target:Anime {id: $id})
+    MATCH (rec:Anime)
+    WHERE rec.id IN $rec_ids
+    OPTIONAL MATCH (target)-[r1]-(x)
+    OPTIONAL MATCH (rec)-[r2]-(y)
+    RETURN target, rec, r1, x, r2, y
+    LIMIT 400
+    """
+    graph_result = graph_query(
+        graph_query_text,
+        {"id": anime_id, "rec_ids": rec_ids},
+        display_lang=display_lang
+    )
+
+    return jsonify({
+        "recommendations": [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "name_cn": row["name_cn"],
+                "rank": row["rank"],
+                "score": row["score"],
+                "explanation": {
+                    "shared_tags": row["shared_tags"],
+                    "shared_voice_actors": row["shared_voice_actors"],
+                    "shared_studios": row["shared_studios"],
+                    "final_score": row["final_score"]
+                }
+            }
+            for row in recommendations
+        ],
+        "nodes": graph_result["nodes"],
+        "edges": graph_result["edges"]
+    })
 
 
-# ── /relations ────────────────────────────────────────────────────
 @app.get("/relations")
 def relations():
     anime_id = request.args.get("id", type=int)
-    group    = request.args.get("group", "").strip()
+    group = request.args.get("group", "").strip()
+    limit = safe_limit(request.args.get("limit", 50), default=50, max_limit=100)
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+
     if not anime_id:
-        return jsonify({"nodes": [], "edges": []}), 400
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "error": "missing id"
+        }), 400
 
     if group:
         cypher = """
         MATCH (a:Anime {id: $id})-[r:RELATED_TO]->(b:Anime)
         WHERE r.group = $group
-        RETURN a, r, b ORDER BY r.same_series DESC, r.relation_type LIMIT 50
+        RETURN a, r, b
+        ORDER BY r.same_series DESC, r.relation_type
+        LIMIT $limit
         """
-        return jsonify(build_graph(cypher, {"id": anime_id, "group": group}))
+        params = {"id": anime_id, "group": group, "limit": limit}
+    else:
+        cypher = """
+        MATCH (a:Anime {id: $id})-[r:RELATED_TO]->(b:Anime)
+        RETURN a, r, b
+        ORDER BY r.same_series DESC, r.relation_type
+        LIMIT $limit
+        """
+        params = {"id": anime_id, "limit": limit}
+
+    return jsonify(graph_query(cypher, params, display_lang=display_lang))
+
+
+# ─────────────────────────────────────────────────────────────
+# Other graph routes
+# ─────────────────────────────────────────────────────────────
+@app.get("/character")
+def character_discovery():
+    name = request.args.get("name", "").strip()
+    limit = safe_limit(request.args.get("limit", DEFAULT_LIMIT))
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+
+    if not name:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "error": "missing name"
+        }), 400
 
     cypher = """
-    MATCH (a:Anime {id: $id})-[r:RELATED_TO]->(b:Anime)
-    RETURN a, r, b ORDER BY r.same_series DESC, r.relation_type LIMIT 50
+    MATCH (c:Character)
+    WHERE toLower(coalesce(c.name, "")) = toLower($name)
+       OR toLower(coalesce(c.name_cn, "")) = toLower($name)
+    MATCH (a:Anime)-[:HAS_CHARACTER]->(c)
+    OPTIONAL MATCH (c)-[:VOICED_BY]->(va:VoiceActor)<-[:VOICED_BY]-(other:Character)
+    OPTIONAL MATCH (rec:Anime)-[:HAS_CHARACTER]->(other)
+    RETURN c, a, va, other, rec
+    LIMIT $limit
     """
-    return jsonify(build_graph(cypher, {"id": anime_id}))
+    return jsonify(graph_query(
+        cypher,
+        {"name": name, "limit": limit},
+        display_lang=display_lang
+    ))
 
 
-# ── /cover ────────────────────────────────────────────────────────
+@app.get("/studio")
+def studio_style():
+    name = request.args.get("name", "").strip()
+    limit = safe_limit(request.args.get("limit", DEFAULT_LIMIT))
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+
+    if not name:
+        return jsonify({
+            "nodes": [],
+            "edges": [],
+            "error": "missing name"
+        }), 400
+
+    cypher = """
+    MATCH (s:Studio {name: $name})<-[:PRODUCED_BY]-(a:Anime)
+    OPTIONAL MATCH (a)-[:HAS_TAG]->(t:Tag)
+    RETURN s, a, t
+    LIMIT $limit
+    """
+    return jsonify(graph_query(
+        cypher,
+        {"name": name, "limit": limit},
+        display_lang=display_lang
+    ))
+
+
+@app.get("/casting")
+def casting():
+    tags = request.args.get("tags", "").strip()
+    limit = safe_limit(request.args.get("limit", 20), default=20, max_limit=50)
+    per_va_limit = safe_limit(request.args.get("per_va_limit", 10), default=10, max_limit=10)
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    if not tag_list:
+        return jsonify({
+            "voice_actor_summary": [],
+            "nodes": [],
+            "edges": [],
+            "error": "missing tags"
+        }), 400
+
+    # 1) 声优摘要：不只看“配得多”，还考虑高排名作品权重
+    summary_query = """
+    MATCH (va:VoiceActor)<-[:VOICED_BY]-(c:Character)<-[:HAS_CHARACTER]-(a:Anime)-[:HAS_TAG]->(t:Tag)
+    WHERE t.name IN $tags
+
+    WITH va, a, count(DISTINCT t) AS anime_matched_tag_count
+
+    WITH
+      va,
+      collect(DISTINCT a) AS matched_anime_list,
+      sum(
+        CASE
+          WHEN a.rank IS NULL OR a.rank = 0 THEN 0
+          WHEN a.rank <= 50 THEN 5
+          WHEN a.rank <= 100 THEN 4
+          WHEN a.rank <= 300 THEN 3
+          WHEN a.rank <= 1000 THEN 2
+          ELSE 1
+        END
+      ) AS weighted_rank_score,
+      sum(anime_matched_tag_count) AS matched_tag_count
+
+    WITH
+      va,
+      size(matched_anime_list) AS matched_anime_count,
+      matched_tag_count,
+      weighted_rank_score
+
+    WITH
+      va,
+      matched_anime_count,
+      matched_tag_count,
+      weighted_rank_score,
+      (weighted_rank_score * 2.0 + matched_tag_count + matched_anime_count * 0.5) AS summary_score
+
+    RETURN
+      va.name AS name,
+      matched_anime_count,
+      matched_tag_count,
+      weighted_rank_score,
+      summary_score
+    ORDER BY summary_score DESC, matched_anime_count DESC, va.name ASC
+    LIMIT $limit
+    """
+    summary_rows = run_query(summary_query, {
+        "tags": tag_list,
+        "limit": limit
+    })
+
+    if not summary_rows:
+        return jsonify({
+            "voice_actor_summary": [],
+            "nodes": [],
+            "edges": []
+        })
+
+    va_names = [row["name"] for row in summary_rows]
+
+    # 2) Graph 候选：先把候选角色全部按优先级排好
+    graph_candidate_query = """
+    MATCH (va:VoiceActor)
+    WHERE va.name IN $va_names
+
+    MATCH (c:Character)-[r:VOICED_BY]->(va)
+    MATCH (a:Anime)-[:HAS_CHARACTER]->(c)
+
+    RETURN
+      va.name AS va_name,
+      va,
+      r,
+      c,
+      a
+    ORDER BY
+      va.name ASC,
+      CASE WHEN a.rank IS NULL OR a.rank = 0 THEN 999999 ELSE a.rank END ASC,
+      a.score DESC,
+      coalesce(c.name_cn, c.name, "") ASC
+    LIMIT 3000
+    """
+
+    with driver.session() as session:
+        candidate_records = list(session.run(
+            graph_candidate_query,
+            {"va_names": va_names}
+        ))
+
+    # 3) Python 里做“角色名去重”
+    #    同一个声优下，同一个角色显示名只保留 rank 最好的那个版本
+    selected_records = []
+    records_by_va = {}
+
+    for record in candidate_records:
+        va_name = record["va_name"]
+        records_by_va.setdefault(va_name, []).append(record)
+
+    for va_name in va_names:
+        va_records = records_by_va.get(va_name, [])
+
+        seen_role_names = set()
+        kept = []
+
+        for record in va_records:
+            character_node = record["c"]
+            role_key = (
+                character_node.get("name_cn")
+                or character_node.get("name")
+                or character_node.get("id")
+            )
+
+            if role_key in seen_role_names:
+                continue
+
+            seen_role_names.add(role_key)
+            kept.append(record)
+
+            if len(kept) >= per_va_limit:
+                break
+
+        selected_records.extend(kept)
+
+    # 4) 转 graph
+    graph_result = build_graph_from_records(selected_records, display_lang=display_lang)
+
+    return jsonify({
+        "voice_actor_summary": [
+            {
+                "name": row["name"],
+                "matched_anime_count": row["matched_anime_count"],
+                "matched_tag_count": row["matched_tag_count"],
+                "weighted_rank_score": row["weighted_rank_score"],
+                "summary_score": row["summary_score"]
+            }
+            for row in summary_rows
+        ],
+        "nodes": graph_result["nodes"],
+        "edges": graph_result["edges"]
+    })
+
+@app.get("/niche")
+def niche():
+    min_rank = request.args.get("pop", 500, type=int)
+    min_tags = request.args.get("rich", 5, type=int)
+    limit = safe_limit(request.args.get("limit", DEFAULT_LIMIT))
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+
+    cypher = """
+    MATCH (a:Anime)-[:HAS_TAG]->(t:Tag)
+    WITH a, count(DISTINCT t) AS richness
+    WHERE a.rank >= $min_rank AND richness >= $min_tags
+    MATCH (a)-[r:HAS_TAG]->(tag:Tag)
+    RETURN a, r, tag
+    LIMIT $limit
+    """
+    return jsonify(graph_query(
+        cypher,
+        {"min_rank": min_rank, "min_tags": min_tags, "limit": limit},
+        display_lang=display_lang
+    ))
+
+
+# ─────────────────────────────────────────────────────────────
+# Cover
+# ─────────────────────────────────────────────────────────────
 @app.get("/cover")
 def cover():
     anime_id = request.args.get("id", type=int)
@@ -300,156 +1372,123 @@ def cover():
 
     cached = _cover_cache.get(anime_id)
     if cached and time.time() - cached["ts"] < COVER_TTL:
-        return jsonify({"image_url": cached["url"], "source": "cache"})
+        return jsonify({
+            "image_url": cached["url"],
+            "source": "cache"
+        })
+
+    headers = {"User-Agent": "anime-kg/1.0"}
+    if BANGUMI_TOKEN:
+        headers["Authorization"] = f"Bearer {BANGUMI_TOKEN}"
 
     try:
         resp = requests.get(
             f"https://api.bgm.tv/v0/subjects/{anime_id}",
-            headers={"Authorization": f"Bearer {BANGUMI_TOKEN}",
-                     "User-Agent": "anime-kg/1.0"},
+            headers=headers,
             timeout=5
         )
         if resp.ok:
             images = resp.json().get("images", {})
             url = images.get("large") or images.get("medium") or images.get("small")
             _cover_cache[anime_id] = {"url": url, "ts": time.time()}
-            return jsonify({"image_url": url, "source": "bangumi"})
+            return jsonify({
+                "image_url": url,
+                "source": "bangumi"
+            })
     except Exception:
         pass
 
     _cover_cache[anime_id] = {"url": None, "ts": time.time()}
-    return jsonify({"image_url": None})
+    return jsonify({
+        "image_url": None,
+        "source": "fallback"
+    })
 
 
-# ── /casting ──────────────────────────────────────────────────────
-@app.get("/casting")
-def casting():
-    tags     = request.args.get("tags", "").strip()
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-    if not tag_list:
-        return jsonify({"nodes": [], "edges": []}), 400
-    cypher = """
-    MATCH (va:VoiceActor)<-[:VOICED_BY]-(:Character)<-[:HAS_CHARACTER]-(a:Anime)-[:HAS_TAG]->(t:Tag)
-    WHERE t.name IN $tags
-    WITH va, count(DISTINCT a) AS score ORDER BY score DESC LIMIT 20
-    MATCH (va)<-[r:VOICED_BY]-(c:Character)
-    RETURN va, r, c LIMIT 200
-    """
-    return jsonify(build_graph(cypher, {"tags": tag_list}))
-
-
-# ── /character ────────────────────────────────────────────────────
-@app.get("/character")
-def character_discovery():
-    name = request.args.get("name", "").strip()
-    if not name:
-        return jsonify({"nodes": [], "edges": []}), 400
-    cypher = """
-    MATCH (c:Character) WHERE c.name = $name OR c.name_cn = $name
-    MATCH (c)<-[:HAS_CHARACTER]-(a:Anime)
-    MATCH (c)-[:VOICED_BY]->(va:VoiceActor)<-[:VOICED_BY]-(other:Character)
-    MATCH (other)<-[:HAS_CHARACTER]-(rec:Anime)-[:HAS_TAG]->(tag:Tag)
-    MATCH (a)-[:HAS_TAG]->(tag)
-    WHERE other <> c
-    RETURN c, a, va, other, rec, tag LIMIT 200
-    """
-    return jsonify(build_graph(cypher, {"name": name}))
-
-
-# ── /studio ───────────────────────────────────────────────────────
-@app.get("/studio")
-def studio_style():
-    name = request.args.get("name", "").strip()
-    if not name:
-        return jsonify({"nodes": [], "edges": []}), 400
-    cypher = """
-    MATCH (s:Studio {name: $name})<-[:PRODUCED_BY]-(a:Anime)-[:HAS_TAG]->(t:Tag)
-    RETURN s, a, t LIMIT 200
-    """
-    return jsonify(build_graph(cypher, {"name": name}))
-
-
-# ── /niche ────────────────────────────────────────────────────────
-@app.get("/niche")
-def niche():
-    min_rank = request.args.get("pop",  500, type=int)
-    min_tags = request.args.get("rich", 5,   type=int)
-    cypher = """
-    MATCH (a:Anime)-[r:HAS_TAG]->(t:Tag)
-    WITH a, count(t) AS richness
-    WHERE richness >= $min_tags AND a.rank >= $min_rank
-    MATCH (a)-[r2:HAS_TAG]->(t2:Tag)
-    RETURN a, r2, t2 LIMIT 200
-    """
-    return jsonify(build_graph(cypher, {"min_rank": min_rank, "min_tags": min_tags}))
-
-
-# ── /ask ──────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Ask (AI)
+# ─────────────────────────────────────────────────────────────
 @app.post("/ask")
 def ask():
-    """GraphRAG AI Q&A with streaming SSE response."""
-    body     = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True) or {}
     question = (body.get("question") or "").strip()
     anime_id = body.get("anime_id")
 
     if not question:
         return jsonify({"error": "missing question"}), 400
-    if not OPENAI_API_KEY:
-        return jsonify({"error": "AI not configured", "fallback": True}), 503
 
-    # Build graph context from Neo4j
+    if not OPENAI_API_KEY:
+        return jsonify({
+            "error": "AI not configured",
+            "fallback": True
+        }), 503
+
     graph_context = ""
     if anime_id:
-        try:
-            with driver.session() as session:
-                rec = session.run("""
-                    MATCH (a:Anime {id: $id})
-                    OPTIONAL MATCH (a)-[:HAS_TAG]->(t:Tag)
-                    OPTIONAL MATCH (a)-[:HAS_CHARACTER]->(c:Character)-[:VOICED_BY]->(v:VoiceActor)
-                    OPTIONAL MATCH (a)-[:PRODUCED_BY]->(s:Studio)
-                    RETURN a,
-                           collect(DISTINCT t.name)[..10] AS tags,
-                           collect(DISTINCT c.name_cn)[..5]  AS chars,
-                           collect(DISTINCT v.name)[..5]     AS vas,
-                           collect(DISTINCT s.name)[..3]     AS studios
-                    LIMIT 1
-                """, id=int(anime_id)).single()
-                if rec:
-                    a = rec["a"]
-                    graph_context = (
-                        f"Anime: {a.get('name_cn') or a.get('name')}\n"
-                        f"Score: {a.get('score')}  Rank: #{a.get('rank')}\n"
-                        f"Tags: {', '.join(filter(None, rec['tags']))}\n"
-                        f"Characters: {', '.join(filter(None, rec['chars']))}\n"
-                        f"Voice Actors: {', '.join(filter(None, rec['vas']))}\n"
-                        f"Studio: {', '.join(filter(None, rec['studios']))}\n"
-                        f"Summary: {(a.get('summary') or '')[:400]}"
-                    )
-        except Exception:
-            pass
+        rows = run_query("""
+        MATCH (a:Anime {id: $id})
+        OPTIONAL MATCH (a)-[:HAS_TAG]->(t:Tag)
+        OPTIONAL MATCH (a)-[:HAS_CHARACTER]->(c:Character)
+        OPTIONAL MATCH (c)-[:VOICED_BY]->(v:VoiceActor)
+        OPTIONAL MATCH (a)-[:PRODUCED_BY]->(s:Studio)
+        RETURN a,
+               collect(DISTINCT t.name)[0..10] AS tags,
+               collect(DISTINCT c.name_cn)[0..5] AS chars,
+               collect(DISTINCT v.name)[0..5] AS vas,
+               collect(DISTINCT s.name)[0..3] AS studios
+        """, {"id": int(anime_id)})
 
-    system_prompt = (
-        "You are an expert anime assistant. Answer concisely and helpfully. "
-        "When graph data is provided, ground your answer in it. "
-        "Respond in the same language as the user's question."
-    )
-    messages = [{"role": "system", "content": system_prompt}]
+        if rows:
+            row = rows[0]
+            a = row["a"]
+            graph_context = (
+                f"Anime: {a.get('name_cn') or a.get('name')}\n"
+                f"Score: {a.get('score')} Rank: #{a.get('rank')}\n"
+                f"Tags: {', '.join([x for x in row['tags'] if x])}\n"
+                f"Characters: {', '.join([x for x in row['chars'] if x])}\n"
+                f"Voice Actors: {', '.join([x for x in row['vas'] if x])}\n"
+                f"Studios: {', '.join([x for x in row['studios'] if x])}\n"
+                f"Summary: {(a.get('summary') or '')[:500]}"
+            )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an anime assistant. "
+                "Answer clearly and ground your answer in the provided graph data when available. "
+                "Respond in the same language as the user."
+            )
+        },
+        {"role": "user", "content": question}
+    ]
+
     if graph_context:
-        messages.append({"role": "system",
-                         "content": f"Current anime context:\n{graph_context}"})
-    messages.append({"role": "user", "content": question})
+        messages.insert(1, {
+            "role": "system",
+            "content": f"Graph context:\n{graph_context}"
+        })
 
     def generate():
         try:
             resp = requests.post(
                 "https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
-                         "Content-Type": "application/json"},
-                json={"model": "gpt-4o-mini", "messages": messages,
-                      "stream": True, "max_tokens": 600},
-                stream=True, timeout=30
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": messages,
+                    "stream": True,
+                    "max_tokens": 600
+                },
+                stream=True,
+                timeout=30
             )
+
             source = "knowledge_graph" if graph_context else "general_model"
+
             for line in resp.iter_lines():
                 if line and line.startswith(b"data: "):
                     chunk = line[6:]
@@ -457,31 +1496,40 @@ def ask():
                         yield f'data: {json.dumps({"done": True, "source": source})}\n\n'
                         return
                     try:
-                        delta = json.loads(chunk)["choices"][0]["delta"].get("content","")
+                        payload = json.loads(chunk)
+                        delta = payload["choices"][0]["delta"].get("content", "")
                         if delta:
                             yield f'data: {json.dumps({"token": delta})}\n\n'
                     except Exception:
-                        pass
+                        continue
         except Exception:
             yield f'data: {json.dumps({"error": "AI error", "fallback": True})}\n\n'
 
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
     )
 
 
-# ── /identify ─────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Identify
+# ─────────────────────────────────────────────────────────────
 @app.post("/identify")
 def identify():
-    """Screenshot identification via trace.moe."""
     if "image" not in request.files:
         return jsonify({"error": "no image uploaded"}), 400
-    img  = request.files["image"]
-    size = img.seek(0, 2); img.seek(0)
+
+    img = request.files["image"]
+    size = img.seek(0, 2)
+    img.seek(0)
+
     if size > 5 * 1024 * 1024:
         return jsonify({"error": "image exceeds 5MB"}), 413
+
     if img.mimetype not in {"image/jpeg", "image/png", "image/webp"}:
         return jsonify({"error": "unsupported format"}), 415
 
@@ -492,36 +1540,40 @@ def identify():
             timeout=10
         )
         if not resp.ok:
-            return jsonify({"error": "identification service error", "matches": []}), 502
+            return jsonify({
+                "error": "identification service error",
+                "matches": []
+            }), 502
 
         matches = []
         for r in resp.json().get("result", [])[:3]:
-            al    = r.get("anilist") or {}
+            al = r.get("anilist") or {}
             al_id = al.get("id") if isinstance(al, dict) else al
-            title = (al.get("title", {}) if isinstance(al, dict) else {})
-            sim   = round(r.get("similarity", 0), 3)
+            title = al.get("title", {}) if isinstance(al, dict) else {}
+            sim = round(r.get("similarity", 0), 3)
 
             in_graph = False
             neo4j_id = None
+
             if al_id:
-                with driver.session() as session:
-                    found = session.run(
-                        "MATCH (a:Anime {anilist_id: $aid}) RETURN a.id AS id LIMIT 1",
-                        aid=al_id
-                    ).single()
-                    if found:
-                        in_graph = True
-                        neo4j_id = found["id"]
+                rows = run_query(
+                    "MATCH (a:Anime {anilist_id: $aid}) RETURN a.id AS id LIMIT 1",
+                    {"aid": al_id}
+                )
+                if rows:
+                    in_graph = True
+                    neo4j_id = rows[0]["id"]
 
             matches.append({
                 "anilist_id": al_id,
-                "anime_id":   neo4j_id,
+                "anime_id": neo4j_id,
                 "anime_name": title.get("chinese") or title.get("romaji", ""),
-                "episode":    r.get("episode"),
-                "timestamp":  round(r.get("from", 0), 1),
+                "episode": r.get("episode"),
+                "timestamp": round(r.get("from", 0), 1),
                 "similarity": sim,
-                "in_graph":   in_graph,
+                "in_graph": in_graph
             })
+
         return jsonify({"matches": matches})
 
     except requests.Timeout:
@@ -530,7 +1582,8 @@ def identify():
         return jsonify({"error": str(e)}), 500
 
 
-# ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Run
+# ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=bool(os.environ.get("DEBUG")))
+    app.run(host="0.0.0.0", port=PORT, debug=True)
