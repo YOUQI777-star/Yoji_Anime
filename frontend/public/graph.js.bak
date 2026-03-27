@@ -85,7 +85,7 @@ function getCyStyle() {
         "text-max-width": 92,
         "text-valign": "bottom",
         "text-margin-y": 8,
-        "text-background-color": "rgba(10,12,18,0.82)",
+        "text-background-color": "rgba(17,19,23,0.72)",
         "text-background-opacity": 1,
         "text-background-padding": 3,
         "text-background-shape": "roundrectangle",
@@ -99,7 +99,7 @@ function getCyStyle() {
       style: {
         "background-color": C.anime,
         "border-color": C.anime,
-        "color": C.text,
+        "color": "#16171b",
         "width": 32,
         "height": 32,
         "font-size": 10,
