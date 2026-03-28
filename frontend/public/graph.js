@@ -1016,3 +1016,136 @@ document.addEventListener('DOMContentLoaded', async () => {
     doSearch(q);
   }
 });
+
+/* ═══════════════════════════════════════════════════════════
+   Yoji AI Assistant
+   ═══════════════════════════════════════════════════════════ */
+
+let _yojiOpen  = false;
+let _yojiAbort = null;
+
+function toggleYojiPanel() {
+  _yojiOpen = !_yojiOpen;
+  const panel = document.getElementById('yoji-panel');
+  if (!panel) return;
+  panel.classList.toggle('open', _yojiOpen);
+  panel.setAttribute('aria-hidden', String(!_yojiOpen));
+  if (_yojiOpen) {
+    setTimeout(() => {
+      const inp = document.getElementById('yoji-input');
+      if (inp) inp.focus();
+    }, 220);
+  }
+}
+
+function submitYojiAsk() {
+  const input  = document.getElementById('yoji-input');
+  const msgs   = document.getElementById('yoji-messages');
+  const sendBtn = document.getElementById('yoji-send');
+  if (!input || !msgs) return;
+
+  const question = input.value.trim();
+  if (!question) return;
+
+  // Cancel any previous stream
+  if (_yojiAbort) { _yojiAbort.abort(); }
+  _yojiAbort = new AbortController();
+
+  // Show user bubble
+  const userBubble = document.createElement('div');
+  userBubble.className = 'yoji-msg user';
+  userBubble.textContent = question;
+  msgs.appendChild(userBubble);
+
+  // AI bubble (streaming)
+  const intentEl = document.createElement('div');
+  intentEl.className = 'yoji-intent-badge';
+  intentEl.textContent = '…';
+
+  const aiBubble = document.createElement('div');
+  aiBubble.className = 'yoji-msg ai streaming';
+
+  msgs.appendChild(intentEl);
+  msgs.appendChild(aiBubble);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  input.value = '';
+  input.style.height = 'auto';
+  if (sendBtn) sendBtn.disabled = true;
+
+  (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/rag/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+        signal: _yojiAbort.signal,
+      });
+
+      if (!res.ok) {
+        aiBubble.textContent = 'Yoji is unavailable right now.';
+        aiBubble.classList.remove('streaming');
+        return;
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            const obj = JSON.parse(raw);
+            if (obj.meta) {
+              const intent = obj.meta.intent || '';
+              intentEl.textContent = intent === 'recommend' ? '✦ Recommend'
+                                   : intent === 'relation'  ? '✦ Relation'
+                                   : '✦ Factual';
+            }
+            if (obj.token) {
+              aiBubble.textContent += obj.token;
+              msgs.scrollTop = msgs.scrollHeight;
+            }
+            if (obj.done) {
+              aiBubble.classList.remove('streaming');
+            }
+            if (obj.error) {
+              aiBubble.textContent = obj.error;
+              aiBubble.classList.remove('streaming');
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        aiBubble.textContent = 'Something went wrong. Try again.';
+        aiBubble.classList.remove('streaming');
+      }
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+  })();
+}
+
+// Enter to send (Shift+Enter = newline)
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('yoji-input');
+  if (inp) {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitYojiAsk();
+      }
+    });
+  }
+});

@@ -403,5 +403,29 @@
     document.getElementById('lang-zh-btn').addEventListener('click', () => applyGraphLanguage('zh'));
   });
 </script>
+
+<!-- ── Yoji AI Assistant ──────────────────────────────────── -->
+<div id="yoji-root">
+  <!-- 聊天窗口 -->
+  <div id="yoji-panel" class="yoji-panel" aria-hidden="true">
+    <div class="yoji-panel-header">
+      <span class="yoji-panel-title">Ask Yoji</span>
+      <button class="yoji-panel-close" onclick="toggleYojiPanel()" aria-label="Close">×</button>
+    </div>
+    <div class="yoji-messages" id="yoji-messages"></div>
+    <div class="yoji-input-row">
+      <textarea id="yoji-input" class="yoji-input" placeholder="Ask me anything about anime…" rows="2"></textarea>
+      <button class="yoji-send" id="yoji-send" onclick="submitYojiAsk()">↑</button>
+    </div>
+  </div>
+
+  <!-- Yoji 头像 -->
+  <div class="yoji-avatar-wrap" onclick="toggleYojiPanel()" title="Ask Yoji">
+    <div class="yoji-tooltip">Ask Yoji</div>
+    <img class="yoji-avatar" src="yoji.png" alt="Yoji" draggable="false" />
+  </div>
+</div>
+<!-- ── /Yoji AI Assistant ──────────────────────────────────── -->
+
 </body>
 </html>
