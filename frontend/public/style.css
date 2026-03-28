@@ -1785,10 +1785,8 @@ body.graph-page {
   bottom: 0;
   right: 24px;
   z-index: 900;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
   pointer-events: none;
+  /* 不用 flex 列：面板改为 absolute 悬浮，头像永远锚在底部 */
 }
 
 /* ── Avatar ── */
@@ -1836,9 +1834,14 @@ body.graph-page {
 
 /* ── Chat panel ── */
 .yoji-panel {
+  /* 脱离文档流，悬浮在头像上方，不影响头像位置 */
+  position: absolute;
+  bottom: 100%;       /* 紧贴头像顶部 */
+  right: 0;
+  margin-bottom: 10px;
   width: 320px;
-  /* 最多 420px，但不超过视口高度减去头像和底部留白 */
-  max-height: min(420px, calc(100vh - 220px));
+  /* 高度最多 420px，但不超过视口减去底部留白 */
+  max-height: min(420px, calc(100vh - 180px));
   display: flex;
   flex-direction: column;
   background: var(--surface2);
@@ -1846,7 +1849,6 @@ body.graph-page {
   border-radius: 14px 14px 4px 14px;
   overflow: hidden;
   pointer-events: all;
-  margin-bottom: 8px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   /* hidden state */
   opacity: 0;
@@ -1896,8 +1898,8 @@ body.graph-page {
   flex-direction: column;
   gap: 10px;
   min-height: 60px;
-  /* 消息区内部滚动，不撑开面板 */
-  max-height: min(280px, calc(100vh - 340px));
+  /* 内部滚动，高度由面板 max-height 自动限制 */
+  overflow-y: auto;
 }
 .yoji-msg {
   font-size: 13px;
@@ -1983,7 +1985,7 @@ body.graph-page {
 @media (max-width: 640px) {
   #yoji-root { right: 10px; }
   .yoji-avatar-wrap { width: 100px; }
-  .yoji-panel { width: calc(100vw - 20px); max-height: 360px; }
+  .yoji-panel { width: calc(100vw - 20px); max-height: min(360px, calc(100vh - 160px)); }
 }
 
 /* ── Yoji dismiss / show / drag additions ── */
