@@ -1982,3 +1982,47 @@ body.graph-page {
   .yoji-avatar-wrap { width: 100px; }
   .yoji-panel { width: calc(100vw - 20px); max-height: 360px; }
 }
+
+/* ── Yoji dismiss / show / drag additions ── */
+#yoji-root.yoji-hidden { display: none; }
+
+/* 头像区域容器（方便定位关闭按钮） */
+.yoji-avatar-area {
+  position: relative;
+  display: inline-block;
+}
+
+/* 右上角关闭按钮 */
+.yoji-dismiss {
+  position: absolute;
+  top: 6px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface3);
+  border: 1px solid var(--border2);
+  color: var(--muted2);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.yoji-avatar-area:hover .yoji-dismiss { opacity: 1; }
+.yoji-dismiss:hover { color: var(--text); border-color: var(--text); }
+
+/* 工具栏 AI 按钮激活态（Yoji 隐藏时高亮提示） */
+#yoji-summon-btn.active {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+/* 拖拽时禁止文字选中 */
+#yoji-root.dragging { user-select: none; cursor: grabbing; }
+.yoji-avatar-wrap { cursor: grab; }
+.yoji-avatar-wrap:active { cursor: grabbing; }

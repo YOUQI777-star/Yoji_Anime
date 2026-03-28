@@ -1024,6 +1024,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 let _yojiOpen  = false;
 let _yojiAbort = null;
 
+/* ── 显隐 ── */
+function showYoji() {
+  const root = document.getElementById('yoji-root');
+  const btn  = document.getElementById('yoji-summon-btn');
+  if (root) root.classList.remove('yoji-hidden');
+  if (btn)  btn.classList.remove('active');
+}
+
+function hideYoji() {
+  const root  = document.getElementById('yoji-root');
+  const panel = document.getElementById('yoji-panel');
+  const btn   = document.getElementById('yoji-summon-btn');
+  if (root)  root.classList.add('yoji-hidden');
+  if (panel) { panel.classList.remove('open'); panel.setAttribute('aria-hidden','true'); }
+  if (btn)   btn.classList.add('active');
+  _yojiOpen = false;
+}
+
 function toggleYojiPanel() {
   _yojiOpen = !_yojiOpen;
   const panel = document.getElementById('yoji-panel');
@@ -1137,8 +1155,9 @@ function submitYojiAsk() {
   })();
 }
 
-// Enter to send (Shift+Enter = newline)
+// Enter to send + 拖拽初始化
 document.addEventListener('DOMContentLoaded', () => {
+  // Enter to send (Shift+Enter = newline)
   const inp = document.getElementById('yoji-input');
   if (inp) {
     inp.addEventListener('keydown', e => {
@@ -1146,6 +1165,49 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         submitYojiAsk();
       }
+    });
+  }
+
+  // ── 拖拽 & 点击 ──────────────────────────────────────────
+  const root   = document.getElementById('yoji-root');
+  const handle = document.getElementById('yoji-handle');
+  if (root && handle) {
+    let dragging = false, hasMoved = false;
+    let startX, startY, startL, startT;
+
+    handle.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      // 首次拖动：把 bottom/right 转成 top/left
+      const rect = root.getBoundingClientRect();
+      root.style.bottom = 'auto';
+      root.style.right  = 'auto';
+      root.style.left   = rect.left + 'px';
+      root.style.top    = rect.top  + 'px';
+
+      dragging = true; hasMoved = false;
+      startX = e.clientX; startY = e.clientY;
+      startL = rect.left; startT = rect.top;
+      root.classList.add('dragging');
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
+      root.style.left = Math.max(0, Math.min(window.innerWidth  - root.offsetWidth,  startL + dx)) + 'px';
+      root.style.top  = Math.max(0, Math.min(window.innerHeight - root.offsetHeight, startT + dy)) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; root.classList.remove('dragging'); }
+    });
+
+    // 点击：只有没有拖动才触发聊天窗
+    handle.addEventListener('click', () => {
+      if (!hasMoved) toggleYojiPanel();
+      hasMoved = false;
     });
   }
 

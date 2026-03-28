@@ -210,6 +210,7 @@
       <button class="tb-btn" onclick="toggleLP()" title="Toggle panel">☰</button>
       <button class="tb-btn" onclick="fitGraph()"  title="Fit to view">⊡</button>
       <button class="tb-btn" onclick="clearGraph()" title="Clear graph">✕</button>
+      <button class="tb-btn" id="yoji-summon-btn" onclick="showYoji()" title="Ask Yoji">✦</button>
     </div>
   </div>
 
@@ -419,10 +420,14 @@
     </div>
   </div>
 
-  <!-- Yoji 头像 -->
-  <div class="yoji-avatar-wrap" onclick="toggleYojiPanel()" title="Ask Yoji">
-    <div class="yoji-tooltip">Ask Yoji</div>
-    <img class="yoji-avatar" src="yoji.png" alt="Yoji" draggable="false" />
+  <!-- Yoji 头像 + 关闭按钮 -->
+  <div class="yoji-avatar-area">
+    <button class="yoji-dismiss" onclick="hideYoji()" title="Dismiss Yoji">×</button>
+    <!-- onclick 由 JS 管理（拖拽时不触发） -->
+    <div class="yoji-avatar-wrap" id="yoji-handle">
+      <div class="yoji-tooltip">Ask Yoji</div>
+      <img class="yoji-avatar" src="yoji.png" alt="Yoji" draggable="false" />
+    </div>
   </div>
 </div>
 <!-- ── /Yoji AI Assistant ──────────────────────────────────── -->
