@@ -1148,4 +1148,36 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // 白底去除：用 canvas 把 yoji.png 的白/浅色背景变透明
+  const yojiImg = document.querySelector('.yoji-avatar');
+  if (yojiImg) {
+    const doRemove = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx    = canvas.getContext('2d');
+        canvas.width  = yojiImg.naturalWidth;
+        canvas.height = yojiImg.naturalHeight;
+        ctx.drawImage(yojiImg, 0, 0);
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          // 白色及近白色（含抗锯齿半透明边缘）变透明
+          const brightness = (r + g + b) / 3;
+          if (brightness > 220) {
+            // 越接近纯白越透明（平滑过渡，避免边缘锯齿）
+            d[i + 3] = Math.round(d[i + 3] * (1 - (brightness - 220) / 35));
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        yojiImg.src = canvas.toDataURL('image/png');
+      } catch (e) {
+        // 跨域限制时静默失败，图片原样显示
+        console.warn('[Yoji] canvas white-removal failed:', e.message);
+      }
+    };
+    if (yojiImg.complete && yojiImg.naturalWidth) doRemove();
+    else yojiImg.addEventListener('load', doRemove);
+  }
 });

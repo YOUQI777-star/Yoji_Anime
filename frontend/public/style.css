@@ -1798,16 +1798,17 @@ body.graph-page {
   cursor: pointer;
   pointer-events: all;
   user-select: none;
-  filter: drop-shadow(0 4px 18px rgba(0,0,0,0.55));
-  transition: filter 0.2s;
+  transition: transform 0.2s;
 }
 .yoji-avatar-wrap:hover {
-  filter: drop-shadow(0 6px 24px rgba(0,0,0,0.75));
+  transform: translateY(-4px);
 }
+/* drop-shadow on <img> 直接跟着人物轮廓，不会出现矩形阴影 */
 .yoji-avatar {
   width: 100%;
   display: block;
   object-fit: contain;
+  filter: drop-shadow(0 6px 20px rgba(0,0,0,0.7));
 }
 
 /* ── Hover tooltip ── */
