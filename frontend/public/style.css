@@ -701,7 +701,16 @@ body.graph-page { overflow: hidden; height: 100vh; }
   cursor: pointer;
   transition: color 0.1s, border-color 0.1s;
 }
-.tb-btn:hover { color: var(--text); border-color: var(--text); }
+.tb-btn:hover  { color: var(--text); border-color: var(--text); }
+.tb-btn.active { color: var(--accent, #e07b54); border-color: var(--accent, #e07b54); }
+.tb-select {
+  height: 28px; padding: 0 6px;
+  background: var(--surface); border: 1px solid var(--border2);
+  color: var(--muted2); font-family: var(--mono); font-size: 10px;
+  cursor: pointer; outline: none; appearance: none; -webkit-appearance: none;
+  transition: color 0.1s, border-color 0.1s; min-width: 36px;
+}
+.tb-select:hover { color: var(--text); border-color: var(--text); }
 
 /* Toggle left panel button */
 #lp-toggle {

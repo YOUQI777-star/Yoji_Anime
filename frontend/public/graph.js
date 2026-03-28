@@ -51,6 +51,10 @@ let favMap = {};      // favorite_id → { item_type, item_raw_id }
 let favKeySet = new Set(); // "Type:raw_id"
 let selectedTags = [];
 let askAbort = null;
+let expandLimit    = 20;   // controlled by toolbar select
+let showEdgeLabels = false; // edge label toggle
+let _tapTimer      = null;  // single/double-click de-conflict
+let _focusNodeId   = null;  // current depth-style focus node
 
 const GRAPH_RUNTIME_I18N = {
   en: {
@@ -141,13 +145,29 @@ function initCy() {
     style: getCyStyle(),
     elements: [],
     layout: { name: 'preset' },
-    minZoom: 0.1,
+    minZoom: 0.3,
     maxZoom: 3,
     wheelSensitivity: 0.3,
   });
 
-  cy.on('tap', 'node', e => onNodeTap(e.target));
+  // ── single/double-click de-conflict ──────────────────
+  cy.on('tap', 'node', e => {
+    const node = e.target;
+    if (_tapTimer) { clearTimeout(_tapTimer); _tapTimer = null; return; }
+    _tapTimer = setTimeout(() => { _tapTimer = null; onNodeTap(node); }, 250);
+  });
+  cy.on('dbltap', 'node', e => {
+    clearTimeout(_tapTimer); _tapTimer = null;
+    onNodeDblTap(e.target);
+  });
   cy.on('tap', e => { if (e.target === cy) closeRightPanel(); });
+
+  // ── keep canvas size in sync on resize (no auto-fit) ─
+  let _resizeT;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeT);
+    _resizeT = setTimeout(() => { if (cy) cy.resize(); }, 200);
+  });
 }
 
 function getCyStyle() {
@@ -313,7 +333,7 @@ function getCyStyle() {
 }
 
 /* ── Graph data loading ────────────────────────────── */
-function loadGraph(data, replace = true) {
+function loadGraph(data, replace = true, fitView = true) {
   if (!cy) return;
   if (replace) cy.elements().remove();
 
@@ -333,14 +353,21 @@ function loadGraph(data, replace = true) {
 
   if (newEls.length) cy.add(newEls);
 
-  runLayout(replace);
+  // auto-apply edge labels if REL mode is on
+  if (showEdgeLabels) {
+    cy.edges().style('label', e => e.data('type') || '');
+    cy.edges().style('font-size', 8);
+  }
+
+  runLayout(replace, fitView);
   updateGraphStats();
 }
 
-function runLayout(full = false) {
+function runLayout(full = false, fitView = true) {
   const nodeCount = cy.nodes().length;
   if (nodeCount === 0) return;
 
+  cy.resize(); // sync canvas size before layout
   const layout = cy.layout({
     name: 'cose',
     animate: nodeCount < 80,
@@ -351,7 +378,7 @@ function runLayout(full = false) {
     edgeElasticity: () => 100,
     gravity: 0.3,
     numIter: 800,
-    fit: true,
+    fit: fitView,
     padding: 40,
   });
   layout.run();
@@ -612,7 +639,7 @@ async function expandVA(name) {
   showGraphLoading(true);
   try {
     const data = await apiFetch(`/expand?id=${encodeURIComponent(name)}&type=VoiceActor&display_lang=${currentLang}&limit=30`);
-    loadGraph(data, false);
+    loadGraph(data, false, false);
   } catch (err) {
     toast(err.message, 'err');
   } finally {
@@ -829,9 +856,9 @@ async function doExpand(rawId, type) {
   showGraphLoading(true);
   try {
     const data = await apiFetch(
-      `/expand?id=${encodeURIComponent(rawId)}&type=${type}&display_lang=${currentLang}&limit=35`
+      `/expand?id=${encodeURIComponent(rawId)}&type=${type}&display_lang=${currentLang}&limit=${expandLimit}`
     );
-    loadGraph(data, false);
+    loadGraph(data, false, false);
   } catch (err) {
     toast(err.message, 'err');
   } finally {
@@ -843,7 +870,7 @@ async function expandTag(tagName) {
   showGraphLoading(true);
   try {
     const data = await apiFetch(`/expand?id=${encodeURIComponent(tagName)}&type=Tag&display_lang=${currentLang}&limit=25`);
-    loadGraph(data, false);
+    loadGraph(data, false, false);
   } catch (err) {
     toast(err.message, 'err');
   } finally {
@@ -982,9 +1009,74 @@ async function submitAsk(animeId) {
   }
 }
 
+/* ── Double-click focus ────────────────────────────── */
+function onNodeDblTap(node) {
+  _focusNodeId = node.id();
+  // expand without fit
+  const d = node.data();
+  if (d.raw_id && d.type) doExpand(d.raw_id, d.type);
+  // animate viewport to center on node
+  cy.animate({ center: { eles: node }, zoom: Math.max(cy.zoom(), 1.3), duration: 350 });
+  // update visual depth hierarchy
+  updateDepthStyles(node);
+}
+
+function updateDepthStyles(focusNode) {
+  if (!cy) return;
+  const depthMap = new Map();
+  depthMap.set(focusNode.id(), 0);
+  let frontier = [focusNode];
+  for (let d = 1; d <= 2; d++) {
+    const next = [];
+    for (const n of frontier) {
+      n.neighborhood('node').forEach(nb => {
+        if (!depthMap.has(nb.id())) { depthMap.set(nb.id(), d); next.push(nb); }
+      });
+    }
+    frontier = next;
+  }
+  cy.batch(() => {
+    cy.nodes().forEach(n => {
+      const depth = depthMap.has(n.id()) ? depthMap.get(n.id()) : 99;
+      if (depth === 0) {
+        n.style({ opacity: 1, 'border-width': 3, 'border-color': '#e07b54' });
+      } else if (depth === 1) {
+        n.style({ opacity: 0.9, 'border-width': 1.5, 'border-color': 'data(color)' });
+      } else if (depth === 2) {
+        n.style({ opacity: 0.6, 'border-width': 1.5, 'border-color': 'data(color)' });
+      } else {
+        n.style({ opacity: 0.25, 'border-width': 1.5, 'border-color': 'data(color)' });
+      }
+    });
+  });
+}
+
+function resetDepthStyles() {
+  if (!cy) return;
+  _focusNodeId = null;
+  cy.batch(() => {
+    cy.nodes().forEach(n => n.style({ opacity: 1, 'border-width': 1.5, 'border-color': 'data(color)' }));
+  });
+}
+
+/* ── Edge label toggle ─────────────────────────────── */
+function toggleEdgeLabels() {
+  showEdgeLabels = !showEdgeLabels;
+  if (!cy) return;
+  cy.edges().style('label',     showEdgeLabels ? (e => e.data('type') || '') : '');
+  cy.edges().style('font-size', showEdgeLabels ? 8 : 0);
+  const btn = document.getElementById('rel-toggle-btn');
+  if (btn) btn.classList.toggle('active', showEdgeLabels);
+}
+
+/* ── Expand limit ──────────────────────────────────── */
+function setExpandLimit(val) {
+  expandLimit = parseInt(val, 10) || 20;
+}
+
 /* ── Graph toolbar ─────────────────────────────────── */
-function fitGraph()    { if (cy) cy.fit(undefined, 40); }
-function clearGraph()  { if (cy) { cy.elements().remove(); updateGraphStats(); closeRightPanel(); } }
+function fitGraph()    { if (cy) { cy.resize(); cy.fit(undefined, 40); } }
+function clearGraph()  { if (cy) { cy.elements().remove(); resetDepthStyles(); updateGraphStats(); closeRightPanel(); } }
 function toggleLP()    {
   const lp = document.getElementById('lp');
   lp.classList.toggle('collapsed');

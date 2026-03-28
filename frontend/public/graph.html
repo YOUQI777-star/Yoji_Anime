@@ -211,6 +211,13 @@
       <button class="tb-btn" onclick="fitGraph()"  title="Fit to view">⊡</button>
       <button class="tb-btn" onclick="clearGraph()" title="Clear graph">✕</button>
       <button class="tb-btn" id="yoji-summon-btn" onclick="showYoji()" title="Ask Yoji">✦</button>
+      <button class="tb-btn" id="rel-toggle-btn" onclick="toggleEdgeLabels()" title="Toggle relationship labels">⌥</button>
+      <select class="tb-select" id="expand-limit-sel" onchange="setExpandLimit(this.value)" title="Expand node limit">
+        <option value="10">10</option>
+        <option value="20" selected>20</option>
+        <option value="30">30</option>
+        <option value="50">50</option>
+      </select>
     </div>
   </div>
 
