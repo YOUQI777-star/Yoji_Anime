@@ -1990,6 +1990,7 @@ body.graph-page {
 .yoji-avatar-area {
   position: relative;
   display: inline-block;
+  pointer-events: all;
 }
 
 /* 右上角关闭按钮 */
@@ -2005,6 +2006,7 @@ body.graph-page {
   color: var(--muted2);
   font-size: 13px;
   line-height: 1;
+  pointer-events: all;
   cursor: pointer;
   display: flex;
   align-items: center;
