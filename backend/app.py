@@ -144,10 +144,10 @@ def get_node_raw_id(node):
 
     if label in {"Anime", "Character"}:
         val = node.get("id")
-        return str(val) if val is not None else str(node.element_id)
+        return str(val) if val is not None else None   # None = skip this node
     if label in {"VoiceActor", "Tag", "Studio", "Country"}:
         val = node.get("name")
-        return str(val) if val is not None else str(node.element_id)
+        return str(val) if val is not None else None   # None = skip this node
     return str(node.element_id)
 
 
@@ -167,6 +167,9 @@ def build_node_data(node, display_lang="cn"):
     labels = list(node.labels)
     label = labels[0] if labels else "Unknown"
     raw_id = get_node_raw_id(node)
+
+    if raw_id is None:
+        return None   # caller must skip None returns
 
     data = {
         "id": f"{label}:{raw_id}",
@@ -197,6 +200,8 @@ def build_graph_from_records(records, display_lang="cn"):
 
             if hasattr(value, "labels"):
                 node_data = build_node_data(value, display_lang)
+                if node_data is None:
+                    continue
                 nodes[node_data["id"]] = {"data": node_data}
 
             elif hasattr(value, "type") and hasattr(value, "start_node") and hasattr(value, "end_node"):
@@ -205,6 +210,10 @@ def build_graph_from_records(records, display_lang="cn"):
 
                 start_data = build_node_data(start_node, display_lang)
                 end_data = build_node_data(end_node, display_lang)
+
+                # skip edges where either endpoint has no valid ID
+                if start_data is None or end_data is None:
+                    continue
 
                 nodes[start_data["id"]] = {"data": start_data}
                 nodes[end_data["id"]] = {"data": end_data}
