@@ -90,7 +90,8 @@ const GRAPH_RUNTIME_I18N = {
     removedFromFavorites: 'REMOVED FROM FAVORITES',
     savedToFavorites: 'SAVED TO FAVORITES',
     aiUnavailable: 'AI unavailable',
-    errorPrefix: 'Error: '
+    errorPrefix: 'Error: ',
+    watchOrder: 'ORDER'
   },
   zh: {
     selected: '已选',
@@ -125,7 +126,8 @@ const GRAPH_RUNTIME_I18N = {
     removedFromFavorites: '已从收藏中移除',
     savedToFavorites: '已加入收藏',
     aiUnavailable: 'AI 当前不可用',
-    errorPrefix: '错误：'
+    errorPrefix: '错误：',
+    watchOrder: '顺序'
   }
 };
 
@@ -551,13 +553,22 @@ function initLeftPanel() {
 }
 
 async function loadPopularTags() {
-  const pool = document.getElementById('tag-pool');
-  if (!pool) return;
+  const pool       = document.getElementById('tag-pool');
+  const searchPool = document.getElementById('search-tag-pool');
+  if (!pool && !searchPool) return;
   try {
     const data = await apiFetch('/tags?limit=40');
-    pool.innerHTML = data.tags.slice(0, 40).map(t =>
-      `<span class="tag-chip" onclick="toggleTag(this, '${escHtml(t.name)}')">${escHtml(t.name)}</span>`
-    ).join('');
+    const tags = data.tags.slice(0, 40);
+    if (pool) {
+      pool.innerHTML = tags.map(t =>
+        `<span class="tag-chip" onclick="toggleTag(this, '${escHtml(t.name)}')">${escHtml(t.name)}</span>`
+      ).join('');
+    }
+    if (searchPool) {
+      searchPool.innerHTML = tags.slice(0, 24).map(t =>
+        `<span class="tag-chip" onclick="doTagSearch('${escHtml(t.name)}')">${escHtml(t.name)}</span>`
+      ).join('');
+    }
   } catch {}
 }
 
@@ -712,6 +723,7 @@ async function renderAnimePanel(data) {
     </div>
     <div class="rp-actions">
       <button class="btn btn-ghost btn-sm" onclick="expandCurrentNode()">${gt('expand')}</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadWatchOrder(${animeId})">${gt('watchOrder')}</button>
       <button id="fav-btn" class="btn btn-sm ${isFaved ? 'btn-danger' : 'btn-ghost'}"
               onclick="toggleFavorite(${JSON.stringify(data).replace(/"/g,"'")})">
         ${isFaved ? gt('saved') : gt('save')}
@@ -1008,6 +1020,65 @@ async function submitAsk(animeId) {
     if (err.name !== 'AbortError') {
       resp.textContent = gt('errorPrefix') + err.message;
     }
+  }
+}
+
+/* ── Tag search ────────────────────────────────────── */
+async function doTagSearch(tagName) {
+  showGraphLoading(true);
+  try {
+    const data = await apiFetch(
+      `/anime_by_tag?tag=${encodeURIComponent(tagName)}&display_lang=${currentLang}&limit=25`
+    );
+    renderTagSearchResults(tagName, data.anime || []);
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    showGraphLoading(false);
+  }
+}
+
+function renderTagSearchResults(tagName, animeList) {
+  const el = document.getElementById('search-tag-results');
+  if (!el) return;
+  if (!animeList.length) {
+    el.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:6px 0">${gt('noResults')}</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="pane-label" style="margin-bottom:6px">${escHtml(tagName)} · ${animeList.length}</div>
+    <div class="rec-list">${animeList.map(a => `
+      <div class="rec-item" onclick="doSearchById(${a.id})">
+        <div class="rec-name">${escHtml(a.name)}</div>
+        <div class="rec-expl">${a.rank ? '#' + a.rank : ''}${a.rank && a.score ? ' · ' : ''}${a.score ? '★' + a.score : ''}</div>
+      </div>`).join('')}
+    </div>`;
+}
+
+/* ── Watch order ────────────────────────────────────── */
+async function loadWatchOrder(animeId) {
+  const infoEl = document.getElementById('rp-info');
+  if (!infoEl) return;
+  infoEl.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:8px 0">LOADING…</div>';
+  try {
+    const data = await apiFetch(`/watch_order?id=${animeId}&display_lang=${currentLang}`);
+    const mainHtml = (data.main_order || []).map((item, i) => `
+      <div class="rec-item"${!item.is_target ? ` onclick="doSearchById(${item.id})" style="cursor:pointer"` : ''}>
+        <div class="rec-name" style="${item.is_target ? 'color:var(--red);font-weight:700' : ''}">${i + 1}. ${escHtml(item.name)}</div>
+        <div class="rec-expl">${escHtml(item.relation)}</div>
+      </div>`).join('');
+    const sideHtml = (data.side_stories || []).map(item => `
+      <div class="rec-item" onclick="doSearchById(${item.id})" style="cursor:pointer">
+        <div class="rec-name">${escHtml(item.name)}</div>
+        <div class="rec-expl">${escHtml(item.relation)}</div>
+      </div>`).join('');
+    infoEl.innerHTML = `
+      <div class="pane-label" style="margin-bottom:6px">主线</div>
+      <div class="rec-list">${mainHtml || '<div style="color:var(--muted);font-size:11px;padding:4px 0">暂无数据</div>'}</div>
+      ${sideHtml ? `<div class="pane-label" style="margin:10px 0 6px">番外 / OVA</div><div class="rec-list">${sideHtml}</div>` : ''}
+      <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:8px;opacity:0.7">${escHtml(data.note || '')}</div>`;
+  } catch {
+    if (infoEl) infoEl.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0">暂无关联作品</div>';
   }
 }
 

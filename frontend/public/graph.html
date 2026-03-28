@@ -123,6 +123,12 @@
           </div>
 
           <button class="btn btn-primary btn-full" onclick="runSearchPane()" id="search-submit-btn">SEARCH →</button>
+
+          <div class="form-group" style="margin-top:6px">
+            <span class="pane-label" id="search-tag-label">BROWSE TAGS</span>
+            <div class="tag-pool" id="search-tag-pool" style="margin-top:6px"></div>
+          </div>
+          <div id="search-tag-results"></div>
         </div>
 
         <div class="ptab-pane" id="pane-rec">
@@ -259,6 +265,7 @@
       displayCn: '中文',
       displayOri: 'ORIG',
       searchSubmitBtn: 'SEARCH →',
+      searchTagLabel: 'BROWSE TAGS',
 
       recLabel: 'ANIME NAME / ID',
       recPlaceholder: 'e.g. Frieren or 38524',
@@ -301,6 +308,7 @@
       displayCn: '中文',
       displayOri: '原文',
       searchSubmitBtn: '开始搜索 →',
+      searchTagLabel: '浏览标签',
 
       recLabel: '动漫名称 / ID',
       recPlaceholder: '例如：葬送的芙莉莲 或 38524',
@@ -372,6 +380,7 @@
     graphSetText('display-cn', t.displayCn);
     graphSetText('display-ori', t.displayOri);
     graphSetText('search-submit-btn', t.searchSubmitBtn);
+    graphSetText('search-tag-label', t.searchTagLabel);
 
     graphSetText('rec-label', t.recLabel);
     graphSetPlaceholder('rec-input', t.recPlaceholder);

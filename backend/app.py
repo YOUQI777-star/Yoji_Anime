@@ -1598,6 +1598,107 @@ def identify():
 
 
 # ─────────────────────────────────────────────────────────────
+# Tag search & Watch order
+# ─────────────────────────────────────────────────────────────
+@app.get("/anime_by_tag")
+def anime_by_tag():
+    tags_param  = request.args.get("tag", "").strip()
+    limit       = safe_limit(request.args.get("limit", 20), default=20, max_limit=50)
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+    tag_list = [t.strip() for t in tags_param.split(",") if t.strip()]
+    if not tag_list:
+        return jsonify({"anime": [], "error": "missing tag"}), 400
+
+    cypher = """
+    MATCH (a:Anime)-[:HAS_TAG]->(t:Tag)
+    WHERE t.name IN $tags AND a.id IS NOT NULL
+    WITH a, collect(t.name) AS matched_tags
+    RETURN a.id AS id, a.name AS name, a.name_cn AS name_cn,
+           a.score AS score, a.rank AS rank, matched_tags
+    ORDER BY
+      CASE WHEN a.rank IS NULL OR a.rank = 0 THEN 99999 ELSE a.rank END ASC,
+      CASE WHEN a.score IS NULL THEN 0 ELSE a.score END DESC
+    LIMIT $limit
+    """
+    rows = run_query(cypher, {"tags": tag_list, "limit": limit})
+    anime_list = []
+    for row in rows:
+        name = (row.get("name_cn") or row.get("name") or "") if display_lang == "cn" \
+               else (row.get("name") or row.get("name_cn") or "")
+        anime_list.append({
+            "id": row["id"],
+            "name": name,
+            "score": row.get("score"),
+            "rank": row.get("rank"),
+            "matched_tags": row.get("matched_tags", [])
+        })
+    return jsonify({"anime": anime_list, "tags": tag_list})
+
+
+@app.get("/watch_order")
+def watch_order():
+    anime_id     = request.args.get("id", type=int)
+    display_lang = safe_display_lang(request.args.get("display_lang", "cn"))
+    if not anime_id:
+        return jsonify({"error": "missing id"}), 400
+
+    target_rows = run_query(
+        "MATCH (a:Anime {id: $id}) RETURN a.id AS id, a.name AS name, "
+        "a.name_cn AS name_cn, a.score AS score, a.rank AS rank",
+        {"id": anime_id}
+    )
+    if not target_rows:
+        return jsonify({"error": "anime not found"}), 404
+
+    t = target_rows[0]
+    target_name = (t.get("name_cn") or t.get("name") or "") if display_lang == "cn" \
+                  else (t.get("name") or t.get("name_cn") or "")
+    target = {"id": t["id"], "name": target_name,
+              "score": t.get("score"), "rank": t.get("rank")}
+
+    rows = run_query("""
+    MATCH (a:Anime {id: $id})-[r:RELATED_TO]-(b:Anime)
+    WHERE b.id IS NOT NULL
+    RETURN b.id AS id, b.name AS name, b.name_cn AS name_cn,
+           b.score AS score, b.rank AS rank,
+           r.relation_type AS relation_type, r.group AS grp
+    """, {"id": anime_id})
+
+    prequel_rels = {"前传", "prequel"}
+    sequel_rels  = {"续集", "sequel"}
+    main_order, side_stories = [], []
+    seen_ids = set()
+    for row in rows:
+        grp = row.get("grp") or ""
+        if not grp or grp in ("alt", "universe") or row["id"] in seen_ids:
+            continue
+        seen_ids.add(row["id"])
+        name = (row.get("name_cn") or row.get("name") or "") if display_lang == "cn" \
+               else (row.get("name") or row.get("name_cn") or "")
+        item = {"id": row["id"], "name": name,
+                "relation": row.get("relation_type") or "",
+                "score": row.get("score"), "rank": row.get("rank")}
+        if grp == "main":
+            main_order.append(item)
+        else:
+            side_stories.append(item)
+
+    main_order.sort(key=lambda x: (
+        0 if x["relation"] in prequel_rels else
+        2 if x["relation"] in sequel_rels else 1
+    ))
+    prequel_count = sum(1 for x in main_order if x["relation"] in prequel_rels)
+    main_order.insert(prequel_count, {**target, "relation": "本作", "is_target": True})
+
+    return jsonify({
+        "target": target,
+        "main_order": main_order,
+        "side_stories": side_stories,
+        "note": "根据现有 relationship 自动整理，供参考"
+    })
+
+
+# ─────────────────────────────────────────────────────────────
 # RAG Blueprint（Hybrid RAG：Chroma + Neo4j + GPT）
 # ─────────────────────────────────────────────────────────────
 try:
