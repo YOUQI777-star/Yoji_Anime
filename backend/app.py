@@ -2,7 +2,8 @@ import os
 import time
 import json
 import uuid
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import secrets
 import requests
 
@@ -48,22 +49,24 @@ FAVORITE_LIMIT = 10
 
 _cover_cache = {}
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SQLITE_PATH = os.path.join(BASE_DIR, "user_data.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 # ─────────────────────────────────────────────────────────────
-# SQLite: users / sessions / favorites
+# PostgreSQL: users / sessions / favorites
 # ─────────────────────────────────────────────────────────────
 def get_db_conn():
-    conn = sqlite3.connect(SQLITE_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 
-def init_sqlite():
+def get_cursor(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+def init_db():
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -98,10 +101,11 @@ def init_sqlite():
     """)
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
-init_sqlite()
+init_db()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -269,12 +273,12 @@ def get_authorized_user():
         return None
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     cur.execute("""
     SELECT u.id, u.email, u.display_name, u.created_at
     FROM user_sessions s
     JOIN users u ON s.user_id = u.id
-    WHERE s.token = ?
+    WHERE s.token = %s
     """, (token,))
     row = cur.fetchone()
     conn.close()
@@ -300,8 +304,8 @@ def auth_required():
 
 def count_user_favorites(user_id):
     conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS cnt FROM favorites WHERE user_id = ?", (user_id,))
+    cur = get_cursor(conn)
+    cur.execute("SELECT COUNT(*) AS cnt FROM favorites WHERE user_id = %s", (user_id,))
     row = cur.fetchone()
     conn.close()
     return row["cnt"] if row else 0
@@ -369,9 +373,9 @@ def register():
         display_name = email.split("@")[0]
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
 
-    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    cur.execute("SELECT id FROM users WHERE email = %s", (email,))
     existing = cur.fetchone()
     if existing:
         conn.close()
@@ -382,7 +386,7 @@ def register():
 
     cur.execute("""
     INSERT INTO users (id, email, password_hash, display_name, created_at)
-    VALUES (?, ?, ?, ?, ?)
+    VALUES (%s, %s, %s, %s, %s)
     """, (
         user_id,
         email,
@@ -393,7 +397,7 @@ def register():
 
     cur.execute("""
     INSERT INTO user_sessions (token, user_id, created_at)
-    VALUES (?, ?, ?)
+    VALUES (%s, %s, %s)
     """, (
         token,
         user_id,
@@ -426,11 +430,11 @@ def login():
         return jsonify({"error": "email and password are required"}), 400
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     cur.execute("""
     SELECT id, email, display_name, password_hash, created_at
     FROM users
-    WHERE email = ?
+    WHERE email = %s
     """, (email,))
     row = cur.fetchone()
 
@@ -441,7 +445,7 @@ def login():
     token = secrets.token_urlsafe(32)
     cur.execute("""
     INSERT INTO user_sessions (token, user_id, created_at)
-    VALUES (?, ?, ?)
+    VALUES (%s, %s, %s)
     """, (token, row["id"], now_iso()))
     conn.commit()
     conn.close()
@@ -469,8 +473,8 @@ def logout():
         return error
 
     conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM user_sessions WHERE token = ?", (user["token"],))
+    cur = get_cursor(conn)
+    cur.execute("DELETE FROM user_sessions WHERE token = %s", (user["token"],))
     conn.commit()
     conn.close()
 
@@ -502,11 +506,11 @@ def list_favorites():
         return error
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     cur.execute("""
     SELECT id, item_type, item_raw_id, item_display_name, created_at
     FROM favorites
-    WHERE user_id = ?
+    WHERE user_id = %s
     ORDER BY created_at DESC
     """, (user["id"],))
     rows = cur.fetchall()
@@ -557,13 +561,13 @@ def add_favorite():
         }), 400
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     favorite_id = str(uuid.uuid4())
 
     try:
         cur.execute("""
         INSERT INTO favorites (id, user_id, item_type, item_raw_id, item_display_name, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             favorite_id,
             user["id"],
@@ -573,7 +577,7 @@ def add_favorite():
             now_iso()
         ))
         conn.commit()
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         conn.close()
         return jsonify({"error": "already favorited"}), 409
 
@@ -594,10 +598,10 @@ def delete_favorite(favorite_id):
         return error
 
     conn = get_db_conn()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     cur.execute("""
     DELETE FROM favorites
-    WHERE id = ? AND user_id = ?
+    WHERE id = %s AND user_id = %s
     """, (favorite_id, user["id"]))
     deleted = cur.rowcount
     conn.commit()
