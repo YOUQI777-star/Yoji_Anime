@@ -52,6 +52,88 @@ let favKeySet = new Set(); // "Type:raw_id"
 let selectedTags = [];
 let askAbort = null;
 
+const GRAPH_RUNTIME_I18N = {
+  en: {
+    selected: 'selected',
+    enterQuery: 'ENTER A QUERY',
+    enterAnimeNameOrId: 'ENTER ANIME NAME OR ID',
+    noResults: 'NO RESULTS',
+    tagsShort: 'TAGS',
+    vaShort: 'VA',
+    studioShort: 'STU',
+    selectAtLeastOneTag: 'SELECT AT LEAST ONE TAG',
+    animeShort: 'ANIME',
+    scoreShort: 'SCORE',
+    expand: 'EXPAND',
+    save: '☆ SAVE',
+    saved: '★ SAVED',
+    noCover: 'NO COVER',
+    date: 'DATE',
+    platform: 'PLATFORM',
+    eps: 'EPS',
+    director: 'DIRECTOR',
+    studio: 'STUDIO',
+    country: 'COUNTRY',
+    tags: 'TAGS',
+    summary: 'SUMMARY',
+    more: '[ MORE ]',
+    less: '[ LESS ]',
+    aiQuery: 'AI QUERY',
+    askPlaceholder: 'Ask about this anime…',
+    askBtn: 'ASK →',
+    type: 'TYPE',
+    id: 'ID',
+    removedFromFavorites: 'REMOVED FROM FAVORITES',
+    savedToFavorites: 'SAVED TO FAVORITES',
+    aiUnavailable: 'AI unavailable',
+    errorPrefix: 'Error: '
+  },
+  zh: {
+    selected: '已选',
+    enterQuery: '请输入查询内容',
+    enterAnimeNameOrId: '请输入动漫名称或 ID',
+    noResults: '暂无结果',
+    tagsShort: '标签',
+    vaShort: '声优',
+    studioShort: '制作',
+    selectAtLeastOneTag: '请至少选择一个标签',
+    animeShort: '动漫',
+    scoreShort: '评分',
+    expand: '展开',
+    save: '☆ 收藏',
+    saved: '★ 已收藏',
+    noCover: '暂无封面',
+    date: '日期',
+    platform: '平台',
+    eps: '集数',
+    director: '导演',
+    studio: '制作',
+    country: '国家',
+    tags: '标签',
+    summary: '简介',
+    more: '[ 展开 ]',
+    less: '[ 收起 ]',
+    aiQuery: 'AI 提问',
+    askPlaceholder: '问问这部作品……',
+    askBtn: '提问 →',
+    type: '类型',
+    id: 'ID',
+    removedFromFavorites: '已从收藏中移除',
+    savedToFavorites: '已加入收藏',
+    aiUnavailable: 'AI 当前不可用',
+    errorPrefix: '错误：'
+  }
+};
+
+function graphUiLang() {
+  return localStorage.getItem('yoji_lang') === 'zh' ? 'zh' : 'en';
+}
+
+function gt(key) {
+  const lang = graphUiLang();
+  return (GRAPH_RUNTIME_I18N[lang] && GRAPH_RUNTIME_I18N[lang][key]) || GRAPH_RUNTIME_I18N.en[key] || key;
+}
+
 /* ── Cytoscape init ────────────────────────────────── */
 function initCy() {
   cy = cytoscape({
@@ -460,20 +542,20 @@ function toggleTag(el, name) {
     el.classList.add('sel');
   }
   const countEl = document.getElementById('sel-tag-count');
-  if (countEl) countEl.textContent = selectedTags.length ? `${selectedTags.length} selected` : '';
+  if (countEl) countEl.textContent = selectedTags.length ? `${selectedTags.length} ${gt('selected')}` : '';
 }
 
 /* ── Panel actions (called from HTML) ──────────────── */
 async function runSearchPane() {
   const q = document.getElementById('search-input').value.trim();
-  if (!q) { toast('ENTER A QUERY', 'err'); return; }
+  if (!q) { toast(gt('enterQuery'), 'err'); return; }
   document.getElementById('nav-search').value = q;
   await doSearch(q);
 }
 
 async function runRecommend() {
   const input = document.getElementById('rec-input').value.trim();
-  if (!input) { toast('ENTER ANIME NAME OR ID', 'err'); return; }
+  if (!input) { toast(gt('enterAnimeNameOrId'), 'err'); return; }
   showGraphLoading(true);
   try {
     const param = /^\d+$/.test(input) ? `id=${input}` : `name=${encodeURIComponent(input)}`;
@@ -490,19 +572,19 @@ async function runRecommend() {
 function renderRecList(recs) {
   const el = document.getElementById('rec-results');
   if (!el) return;
-  if (!recs || !recs.length) { el.innerHTML = '<div class="empty-state">NO RESULTS</div>'; return; }
+  if (!recs || !recs.length) { el.innerHTML = `<div class="empty-state">${gt('noResults')}</div>`; return; }
   el.innerHTML = recs.map(r => `
     <div class="rec-item" onclick="doSearchById(${r.id})">
       <div class="rec-name">${escHtml(r.name_cn || r.name)}</div>
       <div class="rec-expl">
-        TAGS:${r.explanation.shared_tags} · VA:${r.explanation.shared_voice_actors} · STU:${r.explanation.shared_studios}
+        ${gt('tagsShort')}:${r.explanation.shared_tags} · ${gt('vaShort')}:${r.explanation.shared_voice_actors} · ${gt('studioShort')}:${r.explanation.shared_studios}
       </div>
     </div>
   `).join('');
 }
 
 async function runCasting() {
-  if (!selectedTags.length) { toast('SELECT AT LEAST ONE TAG', 'err'); return; }
+  if (!selectedTags.length) { toast(gt('selectAtLeastOneTag'), 'err'); return; }
   showGraphLoading(true);
   try {
     const data = await apiFetch(`/casting?tags=${encodeURIComponent(selectedTags.join(','))}&display_lang=${currentLang}&limit=15`);
@@ -514,7 +596,7 @@ async function runCasting() {
         el.innerHTML = data.voice_actor_summary.slice(0, 8).map(v =>
           `<div class="rec-item" onclick="expandVA('${escHtml(v.name)}')">
             <div class="rec-name">${escHtml(v.name)}</div>
-            <div class="rec-expl">ANIME:${v.matched_anime_count} · SCORE:${v.summary_score.toFixed(1)}</div>
+            <div class="rec-expl">${gt('animeShort')}:${v.matched_anime_count} · ${gt('scoreShort')}:${v.summary_score.toFixed(1)}</div>
           </div>`
         ).join('');
       }
@@ -600,10 +682,10 @@ async function renderAnimePanel(data) {
       <div class="rp-cover-ph"><span class="spin"></span></div>
     </div>
     <div class="rp-actions">
-      <button class="btn btn-ghost btn-sm" onclick="expandCurrentNode()">EXPAND</button>
+      <button class="btn btn-ghost btn-sm" onclick="expandCurrentNode()">${gt('expand')}</button>
       <button id="fav-btn" class="btn btn-sm ${isFaved ? 'btn-danger' : 'btn-ghost'}"
               onclick="toggleFavorite(${JSON.stringify(data).replace(/"/g,"'")})">
-        ${isFaved ? '★ SAVED' : '☆ SAVE'}
+        ${isFaved ? gt('saved') : gt('save')}
       </button>
     </div>
     <div id="rp-info"></div>
@@ -618,7 +700,7 @@ async function renderAnimePanel(data) {
       if (cov.image_url) {
         wrap.innerHTML = `<img class="rp-cover" src="${cov.image_url}" alt="cover" loading="lazy" />`;
       } else {
-        wrap.innerHTML = `<div class="rp-cover-ph" style="font-size:10px;font-family:var(--mono);color:var(--muted)">NO COVER</div>`;
+        wrap.innerHTML = `<div class="rp-cover-ph" style="font-size:10px;font-family:var(--mono);color:var(--muted)">${gt('noCover')}</div>`;
       }
     }
   } catch {}
@@ -640,14 +722,14 @@ async function renderAnimePanel(data) {
         </div>
       `);
     }
-    if (detail.date)     rows.push(infoRow('DATE', detail.date));
-    if (detail.platform) rows.push(infoRow('PLATFORM', detail.platform));
-    if (detail.episodes) rows.push(infoRow('EPS', detail.episodes));
-    if (detail.director) rows.push(infoRow('DIRECTOR', detail.director));
+    if (detail.date)     rows.push(infoRow(gt('date'), detail.date));
+    if (detail.platform) rows.push(infoRow(gt('platform'), detail.platform));
+    if (detail.episodes) rows.push(infoRow(gt('eps'), detail.episodes));
+    if (detail.director) rows.push(infoRow(gt('director'), detail.director));
     if (detail.studios?.filter(Boolean).length)
-      rows.push(infoRow('STUDIO', detail.studios.filter(Boolean).join(', ')));
+      rows.push(infoRow(gt('studio'), detail.studios.filter(Boolean).join(', ')));
     if (detail.countries?.filter(Boolean).length)
-      rows.push(infoRow('COUNTRY', detail.countries.filter(Boolean).join(', ')));
+      rows.push(infoRow(gt('country'), detail.countries.filter(Boolean).join(', ')));
 
     const tags = (detail.tags || []).filter(Boolean);
     const tagHtml = tags.length
@@ -661,16 +743,16 @@ async function renderAnimePanel(data) {
       const full = escHtml(detail.summary);
       summaryHtml = `
         <div>
-          <div class="pane-label" style="margin-bottom:6px">SUMMARY</div>
+          <div class="pane-label" style="margin-bottom:6px">${gt('summary')}</div>
           <div class="summary-text" id="summary-txt">${full}</div>
-          ${detail.summary.length > 200 ? `<span class="summary-more" onclick="toggleSummary()">[ MORE ]</span>` : ''}
+          ${detail.summary.length > 200 ? `<span class="summary-more" onclick="toggleSummary()">${gt('more')}</span>` : ''}
         </div>
       `;
     }
 
     infoEl.innerHTML = `
       <div class="info-rows">${rows.join('')}</div>
-      ${tags.length ? `<div><div class="pane-label" style="margin-bottom:6px">TAGS</div>${tagHtml}</div>` : ''}
+      ${tags.length ? `<div><div class="pane-label" style="margin-bottom:6px">${gt('tags')}</div>${tagHtml}</div>` : ''}
       ${summaryHtml}
     `;
   } catch {}
@@ -679,12 +761,12 @@ async function renderAnimePanel(data) {
   const askWrap = document.getElementById('rp-ask-wrap');
   if (askWrap) {
     askWrap.innerHTML = `
-      <div class="pane-label">AI QUERY</div>
+      <div class="pane-label">${gt('aiQuery')}</div>
       <div class="ask-wrap">
-        <textarea class="ask-ta" id="ask-input" placeholder="Ask about this anime…" rows="2"></textarea>
+        <textarea class="ask-ta" id="ask-input" placeholder="${gt('askPlaceholder')}" rows="2"></textarea>
         <div class="ask-foot">
           <span class="ask-src" id="ask-src"></span>
-          <button class="btn btn-primary btn-sm" onclick="submitAsk(${animeId})">ASK →</button>
+          <button class="btn btn-primary btn-sm" onclick="submitAsk(${animeId})">${gt('askBtn')}</button>
         </div>
         <div class="ask-resp" id="ask-resp"></div>
       </div>
@@ -704,7 +786,7 @@ function toggleSummary() {
   const btn = document.querySelector('.summary-more');
   if (!el) return;
   el.classList.toggle('expanded');
-  if (btn) btn.textContent = el.classList.contains('expanded') ? '[ LESS ]' : '[ MORE ]';
+  if (btn) btn.textContent = el.classList.contains('expanded') ? gt('less') : gt('more');
 }
 
 /* ── Generic node panel ────────────────────────────── */
@@ -718,17 +800,17 @@ function renderGenericPanel(data) {
   if (canFav) {
     extraBtn = `<button id="fav-btn" class="btn btn-sm ${isFaved ? 'btn-danger' : 'btn-ghost'}"
       onclick="toggleFavorite(${JSON.stringify(data).replace(/"/g,"'")})">
-      ${isFaved ? '★ SAVED' : '☆ SAVE'}
+      ${isFaved ? gt('saved') : gt('save')}
     </button>`;
   }
 
   scroll.innerHTML = `
     <div class="info-rows">
-      ${infoRow('TYPE', data.type)}
-      ${infoRow('ID', data.raw_id)}
+      ${infoRow(gt('type'), data.type)}
+      ${infoRow(gt('id'), data.raw_id)}
     </div>
     <div class="rp-actions">
-      <button class="btn btn-ghost btn-sm" onclick="expandCurrentNode()">EXPAND</button>
+      <button class="btn btn-ghost btn-sm" onclick="expandCurrentNode()">${gt('expand')}</button>
       ${extraBtn}
     </div>
   `;
@@ -806,7 +888,7 @@ async function toggleFavorite(dataObj) {
       await apiFetch(`/favorites/${favId}`, { method: 'DELETE' });
       delete favMap[favId];
       favKeySet.delete(key);
-      toast('REMOVED FROM FAVORITES');
+      toast(gt('removedFromFavorites'));
       updateFavBtn(false);
     } catch (err) {
       toast(err.message, 'err');
@@ -819,7 +901,7 @@ async function toggleFavorite(dataObj) {
       });
       favMap[res.favorite_id] = { item_type: type, item_raw_id: String(rawId) };
       favKeySet.add(key);
-      toast('SAVED TO FAVORITES', 'ok');
+      toast(gt('savedToFavorites'), 'ok');
       updateFavBtn(true);
     } catch (err) {
       toast(err.message, 'err');
@@ -831,7 +913,7 @@ function updateFavBtn(isFaved) {
   const btn = document.getElementById('fav-btn');
   if (!btn) return;
   btn.className = `btn btn-sm ${isFaved ? 'btn-danger' : 'btn-ghost'}`;
-  btn.textContent = isFaved ? '★ SAVED' : '☆ SAVE';
+  btn.textContent = isFaved ? gt('saved') : gt('save');
 }
 
 /* ── AI Ask (SSE) ──────────────────────────────────── */
@@ -865,7 +947,7 @@ async function submitAsk(animeId) {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      resp.textContent = body.error || 'AI unavailable';
+      resp.textContent = body.error || gt('aiUnavailable');
       return;
     }
 
@@ -895,7 +977,7 @@ async function submitAsk(animeId) {
     }
   } catch (err) {
     if (err.name !== 'AbortError') {
-      resp.textContent = 'Error: ' + err.message;
+      resp.textContent = gt('errorPrefix') + err.message;
     }
   }
 }

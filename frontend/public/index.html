@@ -10,7 +10,6 @@
   <style>
     html, body { overflow: auto; height: auto; }
 
-    /* Scanline overlay — very subtle, not gimmicky */
     body::after {
       content: '';
       position: fixed; inset: 0;
@@ -25,7 +24,6 @@
       z-index: 9999;
     }
 
-    /* Big corner mark */
     .corner-mark {
       position: fixed;
       bottom: 0; right: 0;
@@ -43,50 +41,440 @@
       background: var(--red);
       transform: translate(-50%, -50%);
     }
+
+    .landing-shell {
+      width: 100%;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 24px 48px;
+    }
+
+    .landing-section {
+      padding: 72px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .landing-section:last-of-type {
+      border-bottom: none;
+    }
+
+    .hero-section {
+      min-height: calc(100vh - var(--nav-h) - 110px);
+      display: flex;
+      align-items: center;
+      padding-top: 40px;
+      padding-bottom: 56px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 40px;
+      align-items: center;
+    }
+
+    .hero-copy { max-width: 640px; }
+    .hero-side { display: flex; justify-content: flex-end; }
+
+    .hero-panel,
+    .feature-card,
+    .step-card,
+    .cta-panel {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+    }
+
+    .hero-panel {
+      width: 100%;
+      max-width: 360px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .hero-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .hero-panel-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .hero-panel-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .hero-panel-value {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .hero-panel-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 4px;
+    }
+
+    .mini-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border: 1px solid var(--border2);
+      font-size: 11px;
+      color: var(--muted2);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .section-kicker {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--red);
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: clamp(1.7rem, 4vw, 2.6rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+
+    .section-intro {
+      max-width: 720px;
+      color: var(--muted2);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .feature-grid,
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 28px;
+    }
+
+    .feature-card,
+    .step-card {
+      padding: 22px 20px;
+      min-height: 190px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card-index {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--red);
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+
+    .card-text {
+      color: var(--muted2);
+      line-height: 1.7;
+      font-size: 13px;
+    }
+
+    .cta-wrap { padding-top: 12px; }
+
+    .cta-panel {
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 760px;
+    }
+
+    .cta-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .welcome-nav-links {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-right: 18px;
+    }
+
+    .welcome-nav-link {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted2);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .welcome-nav-link:hover { color: var(--text); }
+
+    .nav-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-right: 12px;
+    }
+
+    .lang-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--border2);
+      background: rgba(255,255,255,0.03);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted2);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .lang-option {
+      cursor: pointer;
+      user-select: none;
+      opacity: 0.6;
+      transition: opacity 0.12s, color 0.12s;
+    }
+
+    .lang-option.active {
+      opacity: 1;
+      color: var(--text);
+    }
+
+    .lang-divider {
+      opacity: 0.5;
+    }
+
+    .welcome-main {
+      flex: none;
+      display: block;
+      padding: 0;
+    }
+
+    .welcome-footer { margin-top: 0; }
+
+    @media (max-width: 900px) {
+      .hero-grid,
+      .feature-grid,
+      .steps-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-side { justify-content: flex-start; }
+      .hero-section { min-height: auto; }
+      .landing-section { padding: 52px 0; }
+      .welcome-nav-links { display: none; }
+      .landing-shell { padding: 0 18px 36px; }
+      .nav-tools { margin-right: 8px; }
+    }
   </style>
 </head>
-<body>
+<body class="welcome-page">
 
-<!-- ── Nav ───────────────────────────────────────── -->
 <nav class="welcome-nav" style="position:sticky;top:0;z-index:100;background:var(--bg)">
   <a class="nav-logo" href="index.html">YOJI</a>
+
+  <div class="welcome-nav-links">
+    <a class="welcome-nav-link" href="graph.html" id="nav-explore">Explore</a>
+    <a class="welcome-nav-link" href="profile.html" id="nav-profile">Profile</a>
+  </div>
+
+  <div class="nav-tools">
+    <div class="lang-toggle" aria-label="Language switcher">
+      <span class="lang-option active" id="lang-en-btn">EN</span>
+      <span class="lang-divider">/</span>
+      <span class="lang-option" id="lang-zh-btn">中文</span>
+    </div>
+  </div>
+
   <div class="welcome-nav-right" id="nav-user"></div>
 </nav>
 
-<!-- ── Main ──────────────────────────────────────── -->
 <main class="welcome-main">
-  <div class="welcome-content">
+  <div class="landing-shell">
 
-    <div class="welcome-eyebrow">System v1.0 — Knowledge Graph</div>
+    <section class="landing-section hero-section" id="hero">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <div class="welcome-eyebrow" id="hero-eyebrow">YOJI // RELATION ARCHIVE</div>
 
-    <h1 class="welcome-title">
-      ANIME<br>
-      <em>GRAPH</em>
-    </h1>
-    <p class="welcome-sub">探索动漫世界的关系网络</p>
+          <h1 class="welcome-title" id="hero-title">
+            Anime<br>
+            <em>Nexus</em>
+          </h1>
 
-    <div class="welcome-rule"></div>
+          <p class="welcome-sub" id="hero-sub">
+            Start with one title, then follow the connections that shape an anime world.
+          </p>
 
-    <p class="welcome-desc">
-      连接动漫、角色、声优、标签与制作公司之间的隐性关联。
-      搜索任意词条，展开节点，发现推荐，提问 AI。
-    </p>
+          <div class="welcome-rule"></div>
 
-    <div class="welcome-actions">
-      <a href="graph.html" class="btn btn-primary" style="padding:10px 24px;font-size:12px">
-        ENTER SYSTEM →
-      </a>
-      <a href="graph.html" class="btn btn-ghost" onclick="this.href='graph.html?q=进击的巨人'">
-        DEMO
-      </a>
-    </div>
+          <div class="welcome-actions">
+            <a href="graph.html" class="btn btn-primary" id="hero-open-btn" style="padding:10px 24px;font-size:12px">
+              Open Archive
+            </a>
+            <a href="graph.html?q=进击的巨人" class="btn btn-ghost" id="hero-demo-btn">
+              Try Demo
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-side">
+          <aside class="hero-panel">
+            <div class="hero-panel-head">
+              <span id="panel-head-title">Archive Preview</span>
+              <span id="status-inline">Online</span>
+            </div>
+
+            <div class="hero-panel-block">
+              <span class="hero-panel-label" id="panel-label-1">Entry Types</span>
+              <span class="hero-panel-value" id="panel-value-1">Anime · Character · Voice Actor</span>
+            </div>
+
+            <div class="hero-panel-block">
+              <span class="hero-panel-label" id="panel-label-2">Explore Through</span>
+              <span class="hero-panel-value" id="panel-value-2">Tags, studios, shared voices, and graph connections.</span>
+            </div>
+
+            <div class="hero-panel-block">
+              <span class="hero-panel-label" id="panel-label-3">Suggested Entry</span>
+              <div class="hero-panel-links">
+                <a class="mini-chip" href="graph.html?q=进击的巨人" id="chip-1">Attack on Titan</a>
+                <a class="mini-chip" href="graph.html?q=链锯人" id="chip-2">Chainsaw Man</a>
+                <a class="mini-chip" href="graph.html?q=新世纪福音战士" id="chip-3">Evangelion</a>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-section" id="explore">
+      <div class="section-kicker" id="explore-kicker">What you can explore</div>
+      <h2 class="section-title" id="explore-title">Explore the archive from different starting points.</h2>
+      <p class="section-intro" id="explore-intro">
+        Search by title, character, or voice actor, then keep moving through the graph to reveal how anime connect across people, themes, and production history.
+      </p>
+
+      <div class="feature-grid">
+        <article class="feature-card">
+          <div class="card-index">01</div>
+          <h3 class="card-title" id="feature-title-1">Search Titles</h3>
+          <p class="card-text" id="feature-text-1">
+            Find anime, characters, and voice actors from a single starting point.
+          </p>
+        </article>
+
+        <article class="feature-card">
+          <div class="card-index">02</div>
+          <h3 class="card-title" id="feature-title-2">Trace Relations</h3>
+          <p class="card-text" id="feature-text-2">
+            Open connected nodes and follow how titles link through people, tags, and studios.
+          </p>
+        </article>
+
+        <article class="feature-card">
+          <div class="card-index">03</div>
+          <h3 class="card-title" id="feature-title-3">Discover Similar Works</h3>
+          <p class="card-text" id="feature-text-3">
+            Find recommendations through shared themes, voices, and production links.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-section" id="how-it-works">
+      <div class="section-kicker" id="how-kicker">How it works</div>
+      <h2 class="section-title" id="how-title">Three steps into the network.</h2>
+      <p class="section-intro" id="how-intro">
+        Begin with a name, open a node, and continue through the links that appear.
+      </p>
+
+      <div class="steps-grid">
+        <article class="step-card">
+          <div class="card-index" id="step-index-1">01 — Start with a name</div>
+          <h3 class="card-title" id="step-title-1">Search by anime title, character, or voice actor.</h3>
+          <p class="card-text" id="step-text-1">
+            Search by anime title, character, or voice actor.
+          </p>
+        </article>
+
+        <article class="step-card">
+          <div class="card-index" id="step-index-2">02 — Open the graph</div>
+          <h3 class="card-title" id="step-title-2">Expand a node to reveal related people, themes, and studios.</h3>
+          <p class="card-text" id="step-text-2">
+            Expand a node to reveal related people, themes, and studios.
+          </p>
+        </article>
+
+        <article class="step-card">
+          <div class="card-index" id="step-index-3">03 — Follow the trail</div>
+          <h3 class="card-title" id="step-title-3">Use those links to discover similar works and unexpected connections.</h3>
+          <p class="card-text" id="step-text-3">
+            Use those links to discover similar works and unexpected connections.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-section cta-wrap" id="final-cta">
+      <div class="cta-panel">
+        <div class="section-kicker" id="cta-kicker">Final CTA</div>
+        <h2 class="section-title" id="cta-title">Every title opens into a larger world.</h2>
+        <p class="section-intro" style="max-width:none" id="cta-text">
+          Begin with a single entry and discover the network behind it.
+        </p>
+
+        <div class="cta-actions">
+          <a href="graph.html" class="btn btn-primary" id="cta-btn" style="padding:10px 24px;font-size:12px">
+            Open Archive
+          </a>
+        </div>
+      </div>
+    </section>
 
   </div>
 </main>
 
-<!-- ── Footer ────────────────────────────────────── -->
 <footer class="welcome-footer">
-  <div class="welcome-meta">YOJI // ANIME-KG // 2026</div>
+  <div class="welcome-meta" id="footer-meta">YOJI // RELATION ARCHIVE // 2026</div>
   <div style="display:flex;gap:20px">
     <div class="welcome-status" id="db-status">
       <span class="status-dot" id="status-dot"></span>
@@ -95,26 +483,226 @@
   </div>
 </footer>
 
-<!-- Decorative corner -->
 <div class="corner-mark"></div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script>
-  // Init shared (modal + nav user)
+  const I18N = {
+    en: {
+      lang: 'en',
+      navExplore: 'Explore',
+      navProfile: 'Profile',
+      heroEyebrow: 'YOJI // RELATION ARCHIVE',
+      heroTitleHtml: 'Anime<br><em>Nexus</em>',
+      heroSub: 'Start with one title, then follow the connections that shape an anime world.',
+      heroOpenBtn: 'Open Archive',
+      heroDemoBtn: 'Try Demo',
+
+      panelHeadTitle: 'Archive Preview',
+      panelLabel1: 'Entry Types',
+      panelValue1: 'Anime · Character · Voice Actor',
+      panelLabel2: 'Explore Through',
+      panelValue2: 'Tags, studios, shared voices, and graph connections.',
+      panelLabel3: 'Suggested Entry',
+      chip1: 'Attack on Titan',
+      chip2: 'Chainsaw Man',
+      chip3: 'Evangelion',
+
+      exploreKicker: 'What you can explore',
+      exploreTitle: 'Explore the archive from different starting points.',
+      exploreIntro: 'Search by title, character, or voice actor, then keep moving through the graph to reveal how anime connect across people, themes, and production history.',
+      featureTitle1: 'Search Titles',
+      featureText1: 'Find anime, characters, and voice actors from a single starting point.',
+      featureTitle2: 'Trace Relations',
+      featureText2: 'Open connected nodes and follow how titles link through people, tags, and studios.',
+      featureTitle3: 'Discover Similar Works',
+      featureText3: 'Find recommendations through shared themes, voices, and production links.',
+
+      howKicker: 'How it works',
+      howTitle: 'Three steps into the network.',
+      howIntro: 'Begin with a name, open a node, and continue through the links that appear.',
+      stepIndex1: '01 — Start with a name',
+      stepTitle1: 'Search by anime title, character, or voice actor.',
+      stepText1: 'Search by anime title, character, or voice actor.',
+      stepIndex2: '02 — Open the graph',
+      stepTitle2: 'Expand a node to reveal related people, themes, and studios.',
+      stepText2: 'Expand a node to reveal related people, themes, and studios.',
+      stepIndex3: '03 — Follow the trail',
+      stepTitle3: 'Use those links to discover similar works and unexpected connections.',
+      stepText3: 'Use those links to discover similar works and unexpected connections.',
+
+      ctaKicker: 'Final CTA',
+      ctaTitle: 'Every title opens into a larger world.',
+      ctaText: 'Begin with a single entry and discover the network behind it.',
+      ctaBtn: 'Open Archive',
+      footerMeta: 'YOJI // RELATION ARCHIVE // 2026',
+      statusOnline: 'BACKEND ONLINE',
+      statusOffline: 'BACKEND OFFLINE',
+      inlineOnline: 'Online',
+      inlineOffline: 'Offline'
+    },
+
+    zh: {
+      lang: 'zh',
+      navExplore: '探索',
+      navProfile: '个人页',
+      heroEyebrow: 'YOJI // 关联档案库',
+      heroTitleHtml: 'Anime<br><em>Nexus</em>',
+      heroSub: '从一部作品出发，沿着角色、声优、标签与制作，看见整张关系网。',
+      heroOpenBtn: '进入档案库',
+      heroDemoBtn: '查看示例',
+
+      panelHeadTitle: '档案预览',
+      panelLabel1: '入口类型',
+      panelValue1: '动漫 · 角色 · 声优',
+      panelLabel2: '探索路径',
+      panelValue2: '通过标签、制作公司、共通声优与图谱连接继续延伸。',
+      panelLabel3: '推荐入口',
+      chip1: '进击的巨人',
+      chip2: '链锯人',
+      chip3: '新世纪福音战士',
+
+      exploreKicker: '探索的起点',
+      exploreTitle: '从任意一个入口，进入整张关系网。',
+      exploreIntro: '无论从作品、角色还是声优开始，你都可以沿着图谱继续展开，看见动漫如何通过人物、主题与制作彼此相连。',
+      featureTitle1: '搜索作品',
+      featureText1: '查找动漫、角色或声优，从任意一个入口进入。',
+      featureTitle2: '追踪关联',
+      featureText2: '展开节点，查看作品之间如何通过人物、标签、制作彼此连接。',
+      featureTitle3: '发现延伸',
+      featureText3: '基于共通的声优、主题或制作团队，找到更多相关作品。',
+
+      howKicker: '三步，进入网络',
+      howTitle: '从一个名字开始，顺着连接继续展开。',
+      howIntro: '先输入一个入口，再展开节点，接着沿着出现的连接继续探索。',
+      stepIndex1: '01 — 输入名称',
+      stepTitle1: '作品、角色或声优，皆可。',
+      stepText1: '作品、角色或声优，皆可。',
+      stepIndex2: '02 — 展开节点',
+      stepTitle2: '查看关联的人物、标签与制作信息。',
+      stepText2: '查看关联的人物、标签与制作信息。',
+      stepIndex3: '03 — 继续延伸',
+      stepTitle3: '沿连接探索，发现更多作品与隐藏关系。',
+      stepText3: '沿连接探索，发现更多作品与隐藏关系。',
+
+      ctaKicker: '最终入口',
+      ctaTitle: '每一部作品背后，都有一张等待被看见的网。',
+      ctaText: '选一个入口，剩下的交给它。',
+      ctaBtn: '进入档案库',
+      footerMeta: 'YOJI // 关联档案库 // 2026',
+      statusOnline: '后端在线',
+      statusOffline: '后端离线',
+      inlineOnline: '在线',
+      inlineOffline: '离线'
+    }
+  };
+
+  let currentLang = localStorage.getItem('yoji_lang') || 'en';
+  let backendOnline = false;
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function setHTML(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = value;
+  }
+
+  function updateLangButtons(lang) {
+    document.getElementById('lang-en-btn').classList.toggle('active', lang === 'en');
+    document.getElementById('lang-zh-btn').classList.toggle('active', lang === 'zh');
+  }
+
+  function renderLanguage(lang) {
+    const t = I18N[lang];
+    if (!t) return;
+
+    document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
+    localStorage.setItem('yoji_lang', lang);
+    currentLang = lang;
+
+    setText('nav-explore', t.navExplore);
+    setText('nav-profile', t.navProfile);
+
+    setText('hero-eyebrow', t.heroEyebrow);
+    setHTML('hero-title', t.heroTitleHtml);
+    setText('hero-sub', t.heroSub);
+    setText('hero-open-btn', t.heroOpenBtn);
+    setText('hero-demo-btn', t.heroDemoBtn);
+
+    setText('panel-head-title', t.panelHeadTitle);
+    setText('panel-label-1', t.panelLabel1);
+    setText('panel-value-1', t.panelValue1);
+    setText('panel-label-2', t.panelLabel2);
+    setText('panel-value-2', t.panelValue2);
+    setText('panel-label-3', t.panelLabel3);
+    setText('chip-1', t.chip1);
+    setText('chip-2', t.chip2);
+    setText('chip-3', t.chip3);
+
+    setText('explore-kicker', t.exploreKicker);
+    setText('explore-title', t.exploreTitle);
+    setText('explore-intro', t.exploreIntro);
+    setText('feature-title-1', t.featureTitle1);
+    setText('feature-text-1', t.featureText1);
+    setText('feature-title-2', t.featureTitle2);
+    setText('feature-text-2', t.featureText2);
+    setText('feature-title-3', t.featureTitle3);
+    setText('feature-text-3', t.featureText3);
+
+    setText('how-kicker', t.howKicker);
+    setText('how-title', t.howTitle);
+    setText('how-intro', t.howIntro);
+    setText('step-index-1', t.stepIndex1);
+    setText('step-title-1', t.stepTitle1);
+    setText('step-text-1', t.stepText1);
+    setText('step-index-2', t.stepIndex2);
+    setText('step-title-2', t.stepTitle2);
+    setText('step-text-2', t.stepText2);
+    setText('step-index-3', t.stepIndex3);
+    setText('step-title-3', t.stepTitle3);
+    setText('step-text-3', t.stepText3);
+
+    setText('cta-kicker', t.ctaKicker);
+    setText('cta-title', t.ctaTitle);
+    setText('cta-text', t.ctaText);
+    setText('cta-btn', t.ctaBtn);
+
+    setText('footer-meta', t.footerMeta);
+
+    if (backendOnline) {
+      setText('status-txt', t.statusOnline);
+      setText('status-inline', t.inlineOnline);
+    } else {
+      setText('status-txt', t.statusOffline);
+      setText('status-inline', t.inlineOffline);
+    }
+
+    updateLangButtons(lang);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initShared();
 
-    // Check backend status
+    document.getElementById('lang-en-btn').addEventListener('click', () => renderLanguage('en'));
+    document.getElementById('lang-zh-btn').addEventListener('click', () => renderLanguage('zh'));
+
+    renderLanguage(currentLang);
+
     fetch(`${API_BASE}/health`)
       .then(r => r.json())
-      .then(d => {
+      .then(() => {
+        backendOnline = true;
         document.getElementById('status-dot').className = 'status-dot online';
-        document.getElementById('status-txt').textContent = 'BACKEND ONLINE';
+        renderLanguage(currentLang);
       })
       .catch(() => {
+        backendOnline = false;
         document.getElementById('status-dot').className = 'status-dot';
-        document.getElementById('status-txt').textContent = 'BACKEND OFFLINE';
+        renderLanguage(currentLang);
       });
   });
 </script>

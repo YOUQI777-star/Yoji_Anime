@@ -9,34 +9,183 @@
   <link rel="stylesheet" href="style.css" />
   <style>
     html, body { overflow: auto; height: auto; }
+
+    .nav-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+      margin-right: 12px;
+    }
+
+    .lang-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--border2);
+      background: rgba(255,255,255,0.03);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted2);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .lang-option {
+      cursor: pointer;
+      user-select: none;
+      opacity: 0.6;
+      transition: opacity 0.12s, color 0.12s;
+    }
+
+    .lang-option.active {
+      opacity: 1;
+      color: var(--text);
+    }
+
+    .lang-divider {
+      opacity: 0.5;
+    }
+
+    .profile-shell {
+      padding-top: var(--nav-h);
+    }
+
+    .profile-subhead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border2);
+    }
+
+    .profile-subhead-title {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .profile-mini-note {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .profile-block {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    @media (max-width: 640px) {
+      .nav-tools {
+        margin-right: 8px;
+      }
+      .lang-toggle {
+        padding: 5px 8px;
+        gap: 6px;
+      }
+    }
   </style>
 </head>
 <body class="profile-page">
 
-<!-- ══════════════════════════════════════════════════
-     NAV
-══════════════════════════════════════════════════ -->
 <nav id="nav">
   <a class="nav-logo" href="index.html">YOJI</a>
   <div class="nav-sep"></div>
-  <span style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em">// USER PROFILE</span>
+  <span id="profile-nav-label" style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em">// USER PROFILE</span>
+
+  <div class="nav-tools">
+    <div class="lang-toggle" aria-label="Language switcher">
+      <span class="lang-option active" id="lang-en-btn">EN</span>
+      <span class="lang-divider">/</span>
+      <span class="lang-option" id="lang-zh-btn">中文</span>
+    </div>
+  </div>
+
   <div class="nav-right" id="nav-user"></div>
 </nav>
 
-<!-- ══════════════════════════════════════════════════
-     MAIN
-══════════════════════════════════════════════════ -->
-<div style="padding-top:var(--nav-h)">
+<div class="profile-shell">
   <main class="profile-main" id="profile-main">
-    <!-- filled by JS -->
-    <div class="empty-state">LOADING…</div>
+    <div class="empty-state" id="profile-loading">LOADING…</div>
   </main>
 </div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script>
-/* ── Profile page logic ──────────────────────────── */
+const PROFILE_I18N = {
+  en: {
+    navLabel: '// USER PROFILE',
+    loading: 'LOADING…',
+    notAuthenticated: 'NOT AUTHENTICATED',
+    signIn: 'SIGN IN',
+    signInAgain: 'SIGN IN AGAIN',
+    sessionExpired: 'SESSION EXPIRED',
+    memberSince: 'MEMBER SINCE',
+    logout: 'LOGOUT',
+    favorites: 'FAVORITES',
+    slotsUsed: 'slots used',
+    anime: 'ANIME',
+    character: 'CHARACTER',
+    voiceActor: 'VOICE ACTOR',
+    openInGraph: 'Open in graph',
+    remove: 'Remove',
+    removed: 'REMOVED',
+    errorPrefix: 'ERROR: ',
+    summaryTitle: 'PROFILE OVERVIEW',
+    summaryNote: 'Saved entries and account info'
+  },
+  zh: {
+    navLabel: '// 用户页面',
+    loading: '加载中…',
+    notAuthenticated: '未登录',
+    signIn: '登录',
+    signInAgain: '重新登录',
+    sessionExpired: '会话已过期',
+    memberSince: '注册时间',
+    logout: '退出登录',
+    favorites: '收藏',
+    slotsUsed: '个名额已使用',
+    anime: '动漫',
+    character: '角色',
+    voiceActor: '声优',
+    openInGraph: '在图谱中打开',
+    remove: '移除',
+    removed: '已移除',
+    errorPrefix: '错误：',
+    summaryTitle: '用户概览',
+    summaryNote: '账户信息与已保存条目'
+  }
+};
+
+function profileLang() {
+  return localStorage.getItem('yoji_lang') === 'zh' ? 'zh' : 'en';
+}
+
+function pt(key) {
+  const lang = profileLang();
+  return (PROFILE_I18N[lang] && PROFILE_I18N[lang][key]) || PROFILE_I18N.en[key] || key;
+}
+
+function updateProfileLangButtons(lang) {
+  document.getElementById('lang-en-btn').classList.toggle('active', lang === 'en');
+  document.getElementById('lang-zh-btn').classList.toggle('active', lang === 'zh');
+}
+
+function applyProfileLanguage(lang) {
+  localStorage.setItem('yoji_lang', lang);
+  document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
+  document.getElementById('profile-nav-label').textContent = PROFILE_I18N[lang].navLabel;
+  updateProfileLangButtons(lang);
+}
 
 async function loadProfile() {
   const main = document.getElementById('profile-main');
@@ -44,9 +193,9 @@ async function loadProfile() {
   if (!isLoggedIn()) {
     main.innerHTML = `
       <div class="empty-state" style="padding:48px">
-        NOT AUTHENTICATED
+        ${escHtml(pt('notAuthenticated'))}
         <div style="margin-top:16px">
-          <button class="btn btn-primary" onclick="showAuthModal('login')">SIGN IN</button>
+          <button class="btn btn-primary" onclick="showAuthModal('login')">${escHtml(pt('signIn'))}</button>
         </div>
       </div>`;
     return;
@@ -58,7 +207,6 @@ async function loadProfile() {
       apiFetch('/favorites')
     ]);
 
-    // Update stored user
     setUser(user);
     renderNavUser();
 
@@ -67,35 +215,40 @@ async function loadProfile() {
     const pct     = Math.round((favsData.favorite_count / user.favorite_limit) * 100);
 
     main.innerHTML = `
-      <!-- User card -->
-      <div class="profile-card">
-        <div class="profile-av">${initial}</div>
-        <div class="profile-info">
-          <div class="profile-name">${escHtml(user.display_name)}</div>
-          <div class="profile-email">${escHtml(user.email)}</div>
-          <div class="profile-since">MEMBER SINCE ${since}</div>
+      <div class="profile-block">
+        <div class="profile-subhead">
+          <span class="profile-subhead-title">${escHtml(pt('summaryTitle'))}</span>
+          <span class="profile-mini-note">${escHtml(pt('summaryNote'))}</span>
         </div>
-        <div class="profile-actions">
-          <button class="btn btn-danger btn-sm" onclick="doLogout()">LOGOUT</button>
+
+        <div class="profile-card">
+          <div class="profile-av">${initial}</div>
+          <div class="profile-info">
+            <div class="profile-name">${escHtml(user.display_name || '—')}</div>
+            <div class="profile-email">${escHtml(user.email || '—')}</div>
+            <div class="profile-since">${escHtml(pt('memberSince'))} ${since}</div>
+          </div>
+          <div class="profile-actions">
+            <button class="btn btn-danger btn-sm" onclick="doLogout()">${escHtml(pt('logout'))}</button>
+          </div>
         </div>
       </div>
 
-      <!-- Favorites -->
       <div class="fav-section">
         <div class="fav-head">
-          <span class="fav-head-title">FAVORITES</span>
+          <span class="fav-head-title">${escHtml(pt('favorites'))}</span>
           <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${favsData.favorite_count} / ${user.favorite_limit}</span>
         </div>
 
-        <div class="fav-quota">${favsData.favorite_count} of ${user.favorite_limit} slots used</div>
+        <div class="fav-quota">${favsData.favorite_count} / ${user.favorite_limit} ${escHtml(pt('slotsUsed'))}</div>
         <div class="bar-track">
           <div class="bar-fill" style="width:${pct}%"></div>
         </div>
 
         <div id="fav-lists">
-          ${renderFavGroup('ANIME', favsData.favorites.Anime || [])}
-          ${renderFavGroup('CHARACTER', favsData.favorites.Character || [])}
-          ${renderFavGroup('VOICE ACTOR', favsData.favorites.VoiceActor || [])}
+          ${renderFavGroup(pt('anime'), favsData.favorites.Anime || [])}
+          ${renderFavGroup(pt('character'), favsData.favorites.Character || [])}
+          ${renderFavGroup(pt('voiceActor'), favsData.favorites.VoiceActor || [])}
         </div>
       </div>
     `;
@@ -105,13 +258,13 @@ async function loadProfile() {
       clearAuth();
       main.innerHTML = `
         <div class="empty-state" style="padding:48px">
-          SESSION EXPIRED
+          ${escHtml(pt('sessionExpired'))}
           <div style="margin-top:16px">
-            <button class="btn btn-primary" onclick="showAuthModal('login')">SIGN IN AGAIN</button>
+            <button class="btn btn-primary" onclick="showAuthModal('login')">${escHtml(pt('signInAgain'))}</button>
           </div>
         </div>`;
     } else {
-      main.innerHTML = `<div class="empty-state">ERROR: ${escHtml(err.message)}</div>`;
+      main.innerHTML = `<div class="empty-state">${escHtml(pt('errorPrefix') + err.message)}</div>`;
     }
   }
 }
@@ -119,16 +272,16 @@ async function loadProfile() {
 function renderFavGroup(label, items) {
   if (!items.length) return '';
   return `
-    <div class="fav-group-label">${label} (${items.length})</div>
+    <div class="fav-group-label">${escHtml(label)} (${items.length})</div>
     ${items.map(f => `
       <div class="fav-item" id="fav-${f.favorite_id}">
         <span class="fav-item-name"
               onclick="goToGraph('${escHtml(f.item_type)}', '${escHtml(f.item_raw_id)}', '${escHtml(f.item_display_name)}')"
-              title="Open in graph">
+              title="${escHtml(pt('openInGraph'))}">
           ${escHtml(f.item_display_name)}
         </span>
         <span class="fav-item-date">${f.created_at.slice(0,10)}</span>
-        <button class="fav-item-del" onclick="deleteFav('${f.favorite_id}')" title="Remove">×</button>
+        <button class="fav-item-del" onclick="deleteFav('${f.favorite_id}')" title="${escHtml(pt('remove'))}">×</button>
       </div>
     `).join('')}
   `;
@@ -139,8 +292,7 @@ async function deleteFav(favId) {
     await apiFetch(`/favorites/${favId}`, { method: 'DELETE' });
     const el = document.getElementById(`fav-${favId}`);
     if (el) el.remove();
-    toast('REMOVED', 'ok');
-    // Reload to refresh counts
+    toast(pt('removed'), 'ok');
     setTimeout(loadProfile, 600);
   } catch (err) {
     toast(err.message, 'err');
@@ -149,7 +301,7 @@ async function deleteFav(favId) {
 
 function goToGraph(type, rawId, name) {
   let q = '';
-  if (type === 'Anime') q = rawId;          // numeric id → search by id
+  if (type === 'Anime') q = rawId;
   else q = name;
   window.location.href = `graph.html?q=${encodeURIComponent(q)}`;
 }
@@ -163,10 +315,22 @@ function escHtml(str) {
     .replace(/'/g,'&#39;');
 }
 
-// Init
 document.addEventListener('DOMContentLoaded', () => {
   initShared();
-  // Override onAuthSuccess so modal sign-in reloads profile
+
+  const lang = profileLang();
+  applyProfileLanguage(lang);
+
+  document.getElementById('lang-en-btn').addEventListener('click', () => {
+    applyProfileLanguage('en');
+    loadProfile();
+  });
+
+  document.getElementById('lang-zh-btn').addEventListener('click', () => {
+    applyProfileLanguage('zh');
+    loadProfile();
+  });
+
   window.onAuthSuccess = () => loadProfile();
   loadProfile();
 });

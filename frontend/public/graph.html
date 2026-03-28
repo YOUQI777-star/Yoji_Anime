@@ -8,177 +8,213 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+  <style>
+    .nav-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+      margin-right: 12px;
+    }
+
+    .lang-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--border2);
+      background: rgba(255,255,255,0.03);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted2);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .lang-option {
+      cursor: pointer;
+      user-select: none;
+      opacity: 0.6;
+      transition: opacity 0.12s, color 0.12s;
+    }
+
+    .lang-option.active {
+      opacity: 1;
+      color: var(--text);
+    }
+
+    .lang-divider {
+      opacity: 0.5;
+    }
+
+    @media (max-width: 640px) {
+      .nav-tools {
+        margin-right: 8px;
+      }
+      .lang-toggle {
+        padding: 5px 8px;
+        gap: 6px;
+      }
+    }
+  </style>
 </head>
 <body class="graph-page">
 
-<!-- ══════════════════════════════════════════════════
-     NAV
-══════════════════════════════════════════════════ -->
 <nav id="nav">
   <a class="nav-logo" href="index.html">YOJI</a>
   <div class="nav-sep"></div>
 
-  <!-- Search -->
   <div class="nav-search-wrap">
     <input id="nav-search" class="nav-search" type="text"
-           placeholder="搜索动漫、角色、声优…" autocomplete="off" />
+           placeholder="Search anime, characters, voice actors…" autocomplete="off" />
     <div id="ac-list"></div>
   </div>
 
-  <!-- Stats -->
   <span id="graph-stats" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">0N · 0E</span>
+
+  <div class="nav-tools">
+    <div class="lang-toggle" aria-label="Language switcher">
+      <span class="lang-option active" id="lang-en-btn">EN</span>
+      <span class="lang-divider">/</span>
+      <span class="lang-option" id="lang-zh-btn">中文</span>
+    </div>
+  </div>
 
   <div class="nav-right" id="nav-user"></div>
 </nav>
 
-<!-- ══════════════════════════════════════════════════
-     LAYOUT
-══════════════════════════════════════════════════ -->
 <div id="graph-layout">
 
-  <!-- ── Left Panel ─────────────────────────────── -->
   <div id="lp">
     <div id="lp-inner">
-      <!-- Tabs -->
       <div class="ptabs">
-        <button class="ptab active" data-pane="search">SEARCH</button>
-        <button class="ptab" data-pane="rec">REC</button>
-        <button class="ptab" data-pane="cast">CAST</button>
-        <button class="ptab" data-pane="niche">NICHE</button>
+        <button class="ptab active" data-pane="search" id="tab-search">SEARCH</button>
+        <button class="ptab" data-pane="rec" id="tab-rec">REC</button>
+        <button class="ptab" data-pane="cast" id="tab-cast">CAST</button>
+        <button class="ptab" data-pane="niche" id="tab-niche">NICHE</button>
       </div>
 
       <div class="lp-scroll">
 
-        <!-- ── SEARCH pane ──────────────────────── -->
         <div class="ptab-pane active" id="pane-search">
           <div class="form-group">
-            <span class="pane-label">QUERY</span>
+            <span class="pane-label" id="search-label-query">QUERY</span>
             <input id="search-input" class="input" type="text"
                    placeholder="name / ID / keyword"
                    onkeydown="if(event.key==='Enter') runSearchPane()" />
           </div>
 
           <div class="form-group">
-            <span class="pane-label">SCOPE</span>
+            <span class="pane-label" id="search-label-scope">SCOPE</span>
             <div class="seg-ctrl">
-              <button class="seg-btn active scope-btn" data-scope="all">ALL</button>
-              <button class="seg-btn scope-btn" data-scope="anime">ANIME</button>
-              <button class="seg-btn scope-btn" data-scope="character">CHAR</button>
-              <button class="seg-btn scope-btn" data-scope="va">VA</button>
+              <button class="seg-btn active scope-btn" data-scope="all" id="scope-all">ALL</button>
+              <button class="seg-btn scope-btn" data-scope="anime" id="scope-anime">ANIME</button>
+              <button class="seg-btn scope-btn" data-scope="character" id="scope-character">CHAR</button>
+              <button class="seg-btn scope-btn" data-scope="va" id="scope-va">VA</button>
             </div>
           </div>
 
           <div class="form-group">
-            <span class="pane-label">DISPLAY LANG</span>
+            <span class="pane-label" id="search-label-display-lang">DISPLAY LANG</span>
             <div class="seg-ctrl">
-              <button class="seg-btn active lang-btn" data-lang="cn">中文</button>
-              <button class="seg-btn lang-btn" data-lang="ori">ORIG</button>
+              <button class="seg-btn active lang-btn" data-lang="cn" id="display-cn">中文</button>
+              <button class="seg-btn lang-btn" data-lang="ori" id="display-ori">ORIG</button>
             </div>
           </div>
 
-          <button class="btn btn-primary btn-full" onclick="runSearchPane()">SEARCH →</button>
+          <button class="btn btn-primary btn-full" onclick="runSearchPane()" id="search-submit-btn">SEARCH →</button>
         </div>
 
-        <!-- ── REC pane ─────────────────────────── -->
         <div class="ptab-pane" id="pane-rec">
           <div class="form-group">
-            <span class="pane-label">ANIME NAME / ID</span>
+            <span class="pane-label" id="rec-label">ANIME NAME / ID</span>
             <input id="rec-input" class="input" type="text"
-                   placeholder="e.g. 进击的巨人 or 38524"
+                   placeholder="e.g. Frieren or 38524"
                    onkeydown="if(event.key==='Enter') runRecommend()" />
           </div>
-          <button class="btn btn-primary btn-full" onclick="runRecommend()">FIND SIMILAR →</button>
+          <button class="btn btn-primary btn-full" onclick="runRecommend()" id="rec-submit-btn">FIND SIMILAR →</button>
 
           <div style="margin-top:4px">
-            <div class="pane-label" style="margin-bottom:6px">RESULTS</div>
+            <div class="pane-label" style="margin-bottom:6px" id="rec-results-label">RESULTS</div>
             <div id="rec-results"></div>
           </div>
         </div>
 
-        <!-- ── CAST pane ─────────────────────────── -->
         <div class="ptab-pane" id="pane-cast">
           <div>
-            <span class="pane-label">SELECT TAGS</span>
+            <span class="pane-label" id="cast-label-select-tags">SELECT TAGS</span>
             <span id="sel-tag-count" style="font-family:var(--mono);font-size:10px;color:var(--red);margin-left:8px"></span>
           </div>
           <div class="tag-pool" id="tag-pool">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">LOADING…</span>
+            <span id="tag-pool-loading" style="font-family:var(--mono);font-size:10px;color:var(--muted)">LOADING…</span>
           </div>
-          <button class="btn btn-primary btn-full" onclick="runCasting()">FIND VOICE ACTORS →</button>
+          <button class="btn btn-primary btn-full" onclick="runCasting()" id="cast-submit-btn">FIND VOICE ACTORS →</button>
 
           <div style="margin-top:4px">
-            <div class="pane-label" style="margin-bottom:6px">TOP VA</div>
+            <div class="pane-label" style="margin-bottom:6px" id="cast-top-va-label">TOP VA</div>
             <div id="cast-results"></div>
           </div>
         </div>
 
-        <!-- ── NICHE pane ─────────────────────────── -->
         <div class="ptab-pane" id="pane-niche">
           <div class="form-group">
-            <span class="pane-label">MIN RANK (popularity floor)</span>
+            <span class="pane-label" id="niche-label-pop">MIN RANK (popularity floor)</span>
             <div class="slider-row">
               <input type="range" id="niche-pop" min="100" max="5000" step="100" value="500" />
               <span class="slider-val" id="niche-pop-val">500</span>
             </div>
           </div>
           <div class="form-group">
-            <span class="pane-label">MIN TAGS (richness)</span>
+            <span class="pane-label" id="niche-label-rich">MIN TAGS (richness)</span>
             <div class="slider-row">
               <input type="range" id="niche-rich" min="1" max="20" step="1" value="5" />
               <span class="slider-val" id="niche-rich-val">5</span>
             </div>
           </div>
-          <button class="btn btn-primary btn-full" onclick="runNiche()">DISCOVER NICHE →</button>
+          <button class="btn btn-primary btn-full" onclick="runNiche()" id="niche-submit-btn">DISCOVER NICHE →</button>
         </div>
 
-      </div><!-- /lp-scroll -->
+      </div>
     </div>
-  </div><!-- /lp -->
+  </div>
 
-  <!-- ── Graph Canvas ───────────────────────────── -->
   <div id="graph-wrap">
     <div id="cy"></div>
 
-    <!-- Loading indicator -->
     <div class="graph-loading" id="graph-loading">
       <span class="spin"></span>
-      <span>QUERYING…</span>
+      <span id="graph-loading-text">QUERYING…</span>
     </div>
 
-    <!-- Legend -->
     <div id="graph-legend">
       <div class="legend-item">
-        <span class="legend-dot" style="background:var(--c-anime)"></span>ANIME
+        <span class="legend-dot" style="background:var(--c-anime)"></span><span id="legend-anime">ANIME</span>
       </div>
       <div class="legend-item">
-        <span class="legend-dot" style="background:var(--c-char)"></span>CHARACTER
+        <span class="legend-dot" style="background:var(--c-char)"></span><span id="legend-character">CHARACTER</span>
       </div>
       <div class="legend-item">
-        <span class="legend-dot" style="background:var(--c-va)"></span>VOICE ACTOR
+        <span class="legend-dot" style="background:var(--c-va)"></span><span id="legend-va">VOICE ACTOR</span>
       </div>
       <div class="legend-item">
-        <span class="legend-dot" style="background:var(--c-tag);transform:rotate(45deg)"></span>TAG
+        <span class="legend-dot" style="background:var(--c-tag);transform:rotate(45deg)"></span><span id="legend-tag">TAG</span>
       </div>
       <div class="legend-item">
-        <span class="legend-dot" style="background:var(--c-studio)"></span>STUDIO
+        <span class="legend-dot" style="background:var(--c-studio)"></span><span id="legend-studio">STUDIO</span>
       </div>
     </div>
 
-    <!-- Hint -->
-    <div class="graph-hint">CLICK NODE TO INSPECT · SCROLL TO ZOOM</div>
+    <div class="graph-hint" id="graph-hint-text">CLICK NODE TO INSPECT · SCROLL TO ZOOM</div>
 
-    <!-- Toolbar -->
     <div class="graph-toolbar">
       <button class="tb-btn" onclick="toggleLP()" title="Toggle panel">☰</button>
       <button class="tb-btn" onclick="fitGraph()"  title="Fit to view">⊡</button>
       <button class="tb-btn" onclick="clearGraph()" title="Clear graph">✕</button>
     </div>
-  </div><!-- /graph-wrap -->
+  </div>
 
-  <!-- ── Right Panel ────────────────────────────── -->
   <div id="rp">
     <div id="rp-inner">
-      <!-- Header -->
       <div class="rp-head">
         <div class="rp-title-area">
           <span class="rp-badge"></span>
@@ -186,15 +222,186 @@
         </div>
         <button class="rp-close" onclick="closeRightPanel()">×</button>
       </div>
-      <!-- Scrollable content -->
       <div class="rp-scroll" id="rp-scroll"></div>
     </div>
-  </div><!-- /rp -->
+  </div>
 
-</div><!-- /graph-layout -->
+</div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script src="graph.js"></script>
+<script>
+  const I18N_GRAPH = {
+    en: {
+      navSearchPlaceholder: 'Search anime, characters, voice actors…',
+      tabSearch: 'SEARCH',
+      tabRec: 'REC',
+      tabCast: 'CAST',
+      tabNiche: 'NICHE',
+
+      searchLabelQuery: 'QUERY',
+      searchPlaceholder: 'name / ID / keyword',
+      searchLabelScope: 'SCOPE',
+      scopeAll: 'ALL',
+      scopeAnime: 'ANIME',
+      scopeCharacter: 'CHAR',
+      scopeVa: 'VA',
+      searchLabelDisplayLang: 'DISPLAY LANG',
+      displayCn: '中文',
+      displayOri: 'ORIG',
+      searchSubmitBtn: 'SEARCH →',
+
+      recLabel: 'ANIME NAME / ID',
+      recPlaceholder: 'e.g. Frieren or 38524',
+      recSubmitBtn: 'FIND SIMILAR →',
+      recResultsLabel: 'RESULTS',
+
+      castLabelSelectTags: 'SELECT TAGS',
+      tagPoolLoading: 'LOADING…',
+      castSubmitBtn: 'FIND VOICE ACTORS →',
+      castTopVaLabel: 'TOP VA',
+
+      nicheLabelPop: 'MIN RANK (popularity floor)',
+      nicheLabelRich: 'MIN TAGS (richness)',
+      nicheSubmitBtn: 'DISCOVER NICHE →',
+
+      graphLoadingText: 'QUERYING…',
+      legendAnime: 'ANIME',
+      legendCharacter: 'CHARACTER',
+      legendVa: 'VOICE ACTOR',
+      legendTag: 'TAG',
+      legendStudio: 'STUDIO',
+      graphHintText: 'CLICK NODE TO INSPECT · SCROLL TO ZOOM'
+    },
+
+    zh: {
+      navSearchPlaceholder: '搜索动漫、角色、声优…',
+      tabSearch: '搜索',
+      tabRec: '推荐',
+      tabCast: '声优',
+      tabNiche: '冷门',
+
+      searchLabelQuery: '查询',
+      searchPlaceholder: '名称 / ID / 关键词',
+      searchLabelScope: '范围',
+      scopeAll: '全部',
+      scopeAnime: '动漫',
+      scopeCharacter: '角色',
+      scopeVa: '声优',
+      searchLabelDisplayLang: '显示语言',
+      displayCn: '中文',
+      displayOri: '原文',
+      searchSubmitBtn: '开始搜索 →',
+
+      recLabel: '动漫名称 / ID',
+      recPlaceholder: '例如：葬送的芙莉莲 或 38524',
+      recSubmitBtn: '查找相似作品 →',
+      recResultsLabel: '结果',
+
+      castLabelSelectTags: '选择标签',
+      tagPoolLoading: '加载中…',
+      castSubmitBtn: '查找声优 →',
+      castTopVaLabel: '热门声优',
+
+      nicheLabelPop: '最低排名（热度门槛）',
+      nicheLabelRich: '最少标签数（信息丰富度）',
+      nicheSubmitBtn: '发现冷门作品 →',
+
+      graphLoadingText: '查询中…',
+      legendAnime: '动漫',
+      legendCharacter: '角色',
+      legendVa: '声优',
+      legendTag: '标签',
+      legendStudio: '制作',
+      graphHintText: '点击节点查看详情 · 滚轮缩放'
+    }
+  };
+
+  // 先在 DOMContentLoaded 前同步给 graph.js 用
+  currentLang = (localStorage.getItem('yoji_lang') === 'zh') ? 'cn' : 'ori';
+
+  function graphSetText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function graphSetPlaceholder(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.placeholder = value;
+  }
+
+  function updateGraphLangButtons(lang) {
+    document.getElementById('lang-en-btn').classList.toggle('active', lang === 'en');
+    document.getElementById('lang-zh-btn').classList.toggle('active', lang === 'zh');
+  }
+
+  function applyGraphLanguage(lang) {
+    const t = I18N_GRAPH[lang];
+    if (!t) return;
+
+    localStorage.setItem('yoji_lang', lang);
+    document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
+
+    // 跟 graph.js 的 display_lang 约定保持一致
+    currentLang = (lang === 'zh') ? 'cn' : 'ori';
+
+    graphSetPlaceholder('nav-search', t.navSearchPlaceholder);
+
+    graphSetText('tab-search', t.tabSearch);
+    graphSetText('tab-rec', t.tabRec);
+    graphSetText('tab-cast', t.tabCast);
+    graphSetText('tab-niche', t.tabNiche);
+
+    graphSetText('search-label-query', t.searchLabelQuery);
+    graphSetPlaceholder('search-input', t.searchPlaceholder);
+    graphSetText('search-label-scope', t.searchLabelScope);
+    graphSetText('scope-all', t.scopeAll);
+    graphSetText('scope-anime', t.scopeAnime);
+    graphSetText('scope-character', t.scopeCharacter);
+    graphSetText('scope-va', t.scopeVa);
+    graphSetText('search-label-display-lang', t.searchLabelDisplayLang);
+    graphSetText('display-cn', t.displayCn);
+    graphSetText('display-ori', t.displayOri);
+    graphSetText('search-submit-btn', t.searchSubmitBtn);
+
+    graphSetText('rec-label', t.recLabel);
+    graphSetPlaceholder('rec-input', t.recPlaceholder);
+    graphSetText('rec-submit-btn', t.recSubmitBtn);
+    graphSetText('rec-results-label', t.recResultsLabel);
+
+    graphSetText('cast-label-select-tags', t.castLabelSelectTags);
+    graphSetText('tag-pool-loading', t.tagPoolLoading);
+    graphSetText('cast-submit-btn', t.castSubmitBtn);
+    graphSetText('cast-top-va-label', t.castTopVaLabel);
+
+    graphSetText('niche-label-pop', t.nicheLabelPop);
+    graphSetText('niche-label-rich', t.nicheLabelRich);
+    graphSetText('niche-submit-btn', t.nicheSubmitBtn);
+
+    graphSetText('graph-loading-text', t.graphLoadingText);
+    graphSetText('legend-anime', t.legendAnime);
+    graphSetText('legend-character', t.legendCharacter);
+    graphSetText('legend-va', t.legendVa);
+    graphSetText('legend-tag', t.legendTag);
+    graphSetText('legend-studio', t.legendStudio);
+    graphSetText('graph-hint-text', t.graphHintText);
+
+    // 同步左侧 display lang 按钮激活状态
+    document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+    const targetBtn = document.querySelector(`.lang-btn[data-lang="${currentLang}"]`);
+    if (targetBtn) targetBtn.classList.add('active');
+
+    updateGraphLangButtons(lang);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('yoji_lang') || 'en';
+    applyGraphLanguage(saved);
+
+    document.getElementById('lang-en-btn').addEventListener('click', () => applyGraphLanguage('en'));
+    document.getElementById('lang-zh-btn').addEventListener('click', () => applyGraphLanguage('zh'));
+  });
+</script>
 </body>
 </html>
