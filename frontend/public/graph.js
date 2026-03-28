@@ -1149,32 +1149,59 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 白底去除：用 canvas 把 yoji.png 的白/浅色背景变透明
+  // 白底去除：从四边 flood fill，只去掉与边缘相连的背景色
+  // 人物内部的白色（衬衫/皮肤）不会被误删
   const yojiImg = document.querySelector('.yoji-avatar');
   if (yojiImg) {
     const doRemove = () => {
       try {
         const canvas = document.createElement('canvas');
         const ctx    = canvas.getContext('2d');
-        canvas.width  = yojiImg.naturalWidth;
-        canvas.height = yojiImg.naturalHeight;
+        const W = yojiImg.naturalWidth;
+        const H = yojiImg.naturalHeight;
+        canvas.width  = W;
+        canvas.height = H;
         ctx.drawImage(yojiImg, 0, 0);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = imgData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const r = d[i], g = d[i + 1], b = d[i + 2];
-          // 白色及近白色（含抗锯齿半透明边缘）变透明
-          const brightness = (r + g + b) / 3;
-          if (brightness > 220) {
-            // 越接近纯白越透明（平滑过渡，避免边缘锯齿）
-            d[i + 3] = Math.round(d[i + 3] * (1 - (brightness - 220) / 35));
-          }
+
+        const imgData = ctx.getImageData(0, 0, W, H);
+        const d       = imgData.data;
+        const visited = new Uint8Array(W * H);
+
+        // 判断是否是"背景色"（白色/近白色/浅灰）
+        function isBg(x, y) {
+          const i = (y * W + x) * 4;
+          return d[i] > 230 && d[i+1] > 230 && d[i+2] > 230;
         }
+
+        // BFS flood fill，从四边开始往内找背景像素
+        const queue = [];
+        function enqueue(x, y) {
+          if (x < 0 || x >= W || y < 0 || y >= H) return;
+          const idx = y * W + x;
+          if (visited[idx] || !isBg(x, y)) return;
+          visited[idx] = 1;
+          queue.push(x, y);   // 用扁平数组更快
+        }
+
+        for (let x = 0; x < W; x++) { enqueue(x, 0); enqueue(x, H - 1); }
+        for (let y = 0; y < H; y++) { enqueue(0, y); enqueue(W - 1, y); }
+
+        let qi = 0;
+        while (qi < queue.length) {
+          const x = queue[qi++];
+          const y = queue[qi++];
+          const pi = (y * W + x) * 4;
+          // 边缘抗锯齿：越接近纯白越透明，灰色边缘半透明
+          const bright = (d[pi] + d[pi+1] + d[pi+2]) / 3;
+          d[pi + 3] = bright > 245 ? 0 : Math.round((255 - bright) * 0.6);
+          enqueue(x + 1, y); enqueue(x - 1, y);
+          enqueue(x, y + 1); enqueue(x, y - 1);
+        }
+
         ctx.putImageData(imgData, 0, 0);
         yojiImg.src = canvas.toDataURL('image/png');
       } catch (e) {
-        // 跨域限制时静默失败，图片原样显示
-        console.warn('[Yoji] canvas white-removal failed:', e.message);
+        console.warn('[Yoji] bg-removal failed:', e.message);
       }
     };
     if (yojiImg.complete && yojiImg.naturalWidth) doRemove();
