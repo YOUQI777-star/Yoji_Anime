@@ -97,8 +97,15 @@ _PERSONA_BASE = """
 
 
 # ─────────────────────────── Prompt 模板 ──────────────────────
+_LANG_RULE = (
+    "CRITICAL — Language rule (highest priority): "
+    "Detect the language of the user's message and reply in that SAME language. "
+    "English question → English answer. Chinese question → Chinese answer. "
+    "Japanese question → Japanese answer. Never override this rule.\n\n"
+)
+
 _SYSTEM = {
-    "factual": _PERSONA_BASE + """
+    "factual": _LANG_RULE + _PERSONA_BASE + """
 
 【当前任务：事实性问答】
 - 问题涉及动漫知识（作品/角色/声优/评分等）：严格基于下方检索内容回答，不编造
@@ -106,7 +113,7 @@ _SYSTEM = {
 - 检索内容不足时：诚实说明，给出可行替代建议，不强行回答
 - 保持 Yoji 的语气和角色感，回答简洁自然，不超过300字""",
 
-    "recommend": _PERSONA_BASE + """
+    "recommend": _LANG_RULE + _PERSONA_BASE + """
 
 【当前任务：动漫推荐】
 - 基于下方检索内容为用户推荐最合适的动画作品
@@ -115,7 +122,7 @@ _SYSTEM = {
 - 不编造未出现在检索内容中的作品
 - 可以带入 Yoji 的个人审美增强推荐可信感，保持角色语气""",
 
-    "relation": _PERSONA_BASE + """
+    "relation": _LANG_RULE + _PERSONA_BASE + """
 
 【当前任务：关系查询】
 - 基于下方检索内容（含图数据库关系结果）回答用户的关联查询
