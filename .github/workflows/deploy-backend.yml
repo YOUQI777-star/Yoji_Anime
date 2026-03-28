@@ -51,7 +51,8 @@ jobs:
             --set-env-vars="NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}" \
             --set-env-vars="NEO4J_DATABASE=${{ secrets.NEO4J_DATABASE }}" \
             --set-env-vars="BANGUMI_TOKEN=${{ secrets.BANGUMI_TOKEN }}" \
-            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}"
 
       - name: Smoke test
         run: |
