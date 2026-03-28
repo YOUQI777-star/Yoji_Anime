@@ -1149,8 +1149,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 白底去除：从四边 flood fill，只去掉与边缘相连的背景色
-  // 人物内部的白色（衬衫/皮肤）不会被误删
+  // 背景去除：自动采样角落颜色 → flood fill 删除相似背景色
+  // 支持棋盘格/纯白/纯灰等各种背景，人物内部颜色不受影响
   const yojiImg = document.querySelector('.yoji-avatar');
   if (yojiImg) {
     const doRemove = () => {
@@ -1159,43 +1159,53 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx    = canvas.getContext('2d');
         const W = yojiImg.naturalWidth;
         const H = yojiImg.naturalHeight;
-        canvas.width  = W;
-        canvas.height = H;
+        canvas.width = W; canvas.height = H;
         ctx.drawImage(yojiImg, 0, 0);
 
         const imgData = ctx.getImageData(0, 0, W, H);
         const d       = imgData.data;
         const visited = new Uint8Array(W * H);
 
-        // 判断是否是"背景色"（白色/近白色/浅灰）
+        // 采样角落 + 四边中点，收集背景色样本
+        const pts = [
+          [0,0],[1,0],[0,1],[2,0],[0,2],
+          [W-1,0],[W-2,0],[0,H-1],[0,H-2],[W-1,H-1],
+          [W>>1, 0],[0, H>>1],[W-1, H>>1],[W>>1, H-1],
+        ];
+        const samples = pts.map(([x,y]) => {
+          const i = (y * W + x) * 4;
+          return [d[i], d[i+1], d[i+2]];
+        });
+
+        // 与任意一个背景样本的曼哈顿距离 < 阈值 → 视为背景
+        const THRESH = 110; // 每通道约 37，足以区分灰色棋格和人物颜色
         function isBg(x, y) {
           const i = (y * W + x) * 4;
-          return d[i] > 230 && d[i+1] > 230 && d[i+2] > 230;
+          const r = d[i], g = d[i+1], b = d[i+2];
+          return samples.some(([sr, sg, sb]) =>
+            Math.abs(r - sr) + Math.abs(g - sg) + Math.abs(b - sb) < THRESH
+          );
         }
 
-        // BFS flood fill，从四边开始往内找背景像素
+        // BFS flood fill 从四边出发
         const queue = [];
         function enqueue(x, y) {
           if (x < 0 || x >= W || y < 0 || y >= H) return;
           const idx = y * W + x;
           if (visited[idx] || !isBg(x, y)) return;
           visited[idx] = 1;
-          queue.push(x, y);   // 用扁平数组更快
+          queue.push(x, y);
         }
 
-        for (let x = 0; x < W; x++) { enqueue(x, 0); enqueue(x, H - 1); }
-        for (let y = 0; y < H; y++) { enqueue(0, y); enqueue(W - 1, y); }
+        for (let x = 0; x < W; x++) { enqueue(x, 0); enqueue(x, H-1); }
+        for (let y = 0; y < H; y++) { enqueue(0, y); enqueue(W-1, y); }
 
         let qi = 0;
         while (qi < queue.length) {
-          const x = queue[qi++];
-          const y = queue[qi++];
-          const pi = (y * W + x) * 4;
-          // 边缘抗锯齿：越接近纯白越透明，灰色边缘半透明
-          const bright = (d[pi] + d[pi+1] + d[pi+2]) / 3;
-          d[pi + 3] = bright > 245 ? 0 : Math.round((255 - bright) * 0.6);
-          enqueue(x + 1, y); enqueue(x - 1, y);
-          enqueue(x, y + 1); enqueue(x, y - 1);
+          const x = queue[qi++], y = queue[qi++];
+          d[(y * W + x) * 4 + 3] = 0; // 全透明
+          enqueue(x+1, y); enqueue(x-1, y);
+          enqueue(x, y+1); enqueue(x, y-1);
         }
 
         ctx.putImageData(imgData, 0, 0);
