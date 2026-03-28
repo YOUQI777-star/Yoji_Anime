@@ -280,7 +280,10 @@ function getCyStyle() {
         "curve-style": "bezier",
         "target-arrow-shape": "none",
         "label": "",
-        "opacity": 0.58
+        "opacity": 0.58,
+        "color": C.text,
+        "font-size": 8,
+        "font-weight": 400
       }
     },
 
