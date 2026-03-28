@@ -1583,6 +1583,17 @@ def identify():
 
 
 # ─────────────────────────────────────────────────────────────
+# RAG Blueprint（Hybrid RAG：Chroma + Neo4j + GPT）
+# ─────────────────────────────────────────────────────────────
+try:
+    from rag_routes import rag_bp
+    app.register_blueprint(rag_bp)
+    print("[app] RAG blueprint registered → /rag/ask  /rag/recommend  /rag/health")
+except Exception as _rag_err:
+    print(f"[app] RAG blueprint skipped (missing deps?): {_rag_err}")
+
+
+# ─────────────────────────────────────────────────────────────
 # Run
 # ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":

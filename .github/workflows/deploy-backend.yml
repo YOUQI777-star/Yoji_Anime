@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'scripts/rag/**'
+      - 'Dockerfile'
+      - '.dockerignore'
       - '.github/workflows/deploy-backend.yml'
 
 env:
@@ -27,10 +30,9 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      # 从项目根目录构建（Dockerfile 在根目录，包含 scripts/）
       - name: Build and push Docker image
-        run: |
-          cd backend
-          gcloud builds submit --tag $IMAGE
+        run: gcloud builds submit --tag $IMAGE
 
       - name: Deploy to Cloud Run
         run: |
@@ -39,12 +41,15 @@ jobs:
             --region $REGION \
             --platform managed \
             --allow-unauthenticated \
-            --memory 512Mi \
+            --memory 1Gi \
             --min-instances 0 \
             --max-instances 3 \
+            --timeout 180 \
+            --set-env-vars="PROJECT_ROOT=/app" \
             --set-env-vars="NEO4J_URI=${{ secrets.NEO4J_URI }}" \
             --set-env-vars="NEO4J_USER=${{ secrets.NEO4J_USER }}" \
             --set-env-vars="NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}" \
+            --set-env-vars="NEO4J_DATABASE=${{ secrets.NEO4J_DATABASE }}" \
             --set-env-vars="BANGUMI_TOKEN=${{ secrets.BANGUMI_TOKEN }}" \
             --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
 

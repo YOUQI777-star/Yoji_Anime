@@ -1,0 +1,49 @@
+# Git
+.git/
+.github/
+.gitignore
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+
+# 本地开发文件
+.env
+*.env.local
+.claude/
+.idea/
+.vscode/
+
+# 密钥文件（通过 Cloud Run 环境变量注入）
+Neo4j-*.txt
+
+# 原始大型数据文件（不需要进容器）
+data/READY_VERSION/
+data/processed/
+
+# Chroma 向量库（280MB，不进 git 也不进镜像，后续用 GCS 方案挂载）
+data/chroma_db/
+
+# 前端
+frontend/
+
+# 其他脚本目录（不需要运行时）
+scripts/crawl_series_relations.py
+scripts/data_cleaning.py
+scripts/fetch_character_cn_names.py
+scripts/info.crawler.py
+scripts/graph/
+
+# 节点模块
+node_modules/
+
+# macOS
+.DS_Store
+
+# 日志
+*.log
+update_sample/

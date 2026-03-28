@@ -16,3 +16,7 @@ pytz==2026.1.post1
 requests==2.32.5
 urllib3==2.6.3
 Werkzeug==3.1.7
+# ── RAG pipeline ──
+openai>=1.30.0
+chromadb>=0.5.0
+pandas>=2.0.0
