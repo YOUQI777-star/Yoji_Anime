@@ -10,87 +10,157 @@
   <style>
     html, body { overflow: auto; height: auto; }
 
+    /* ── Lang toggle ── */
     .nav-tools {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-left: auto;
-      margin-right: 12px;
+      display: flex; align-items: center; gap: 12px;
+      margin-left: auto; margin-right: 12px;
     }
-
     .lang-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border: 1px solid var(--border2);
-      background: rgba(255,255,255,0.03);
-      font-family: var(--mono);
-      font-size: 10px;
-      color: var(--muted2);
-      letter-spacing: 0.06em;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border: 1px solid var(--border2);
+      background: rgba(255,255,255,0.03); font-family: var(--mono);
+      font-size: 10px; color: var(--muted2); letter-spacing: 0.06em;
       text-transform: uppercase;
     }
+    .lang-option { cursor: pointer; user-select: none; opacity: 0.6; transition: opacity 0.12s, color 0.12s; }
+    .lang-option.active { opacity: 1; color: var(--text); }
+    .lang-divider { opacity: 0.5; }
 
-    .lang-option {
-      cursor: pointer;
-      user-select: none;
-      opacity: 0.6;
-      transition: opacity 0.12s, color 0.12s;
+    /* ── Shell ── */
+    .profile-shell { padding-top: var(--nav-h); padding-bottom: 48px; }
+    .profile-main  { max-width: 960px; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── Section wrapper ── */
+    .pc-section {
+      background: var(--surface, rgba(255,255,255,0.03));
+      border: 1px solid var(--border2);
+      padding: 20px;
+    }
+    .pc-section-title {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      margin-bottom: 16px; padding-bottom: 10px;
+      border-bottom: 1px solid var(--border2);
+      display: flex; align-items: center; justify-content: space-between;
     }
 
-    .lang-option.active {
-      opacity: 1;
-      color: var(--text);
-    }
+    /* ── Two-column grids ── */
+    .pc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 720px) { .pc-grid { grid-template-columns: 1fr; } }
 
-    .lang-divider {
-      opacity: 0.5;
-    }
-
-    .profile-shell {
-      padding-top: var(--nav-h);
-    }
-
+    /* ── Profile card ── */
     .profile-subhead {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
-      padding-bottom: 10px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 8px; padding-bottom: 10px;
       border-bottom: 1px solid var(--border2);
     }
+    .profile-subhead-title { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+    .profile-mini-note    { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.05em; }
 
-    .profile-subhead-title {
-      font-family: var(--mono);
-      font-size: 10px;
-      color: var(--muted);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
+    .profile-status-badge {
+      display: inline-block; padding: 2px 8px; margin-top: 6px;
+      border: 1px solid var(--border); font-family: var(--mono);
+      font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--accent, #e07b54);
     }
 
-    .profile-mini-note {
-      font-family: var(--mono);
-      font-size: 10px;
-      color: var(--muted);
-      letter-spacing: 0.05em;
+    /* ── Quick actions ── */
+    .qa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .qa-btn {
+      padding: 11px 12px; background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border2); font-family: var(--mono);
+      font-size: 10px; color: var(--text); letter-spacing: 0.06em;
+      text-transform: uppercase; cursor: pointer; text-align: left;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .qa-btn:hover { border-color: var(--accent, #e07b54); background: rgba(224,123,84,0.06); }
+    .qa-btn-icon { opacity: 0.5; margin-right: 6px; }
+
+    /* ── Anime cover cards ── */
+    .anime-cards-grid { display: flex; flex-direction: column; gap: 8px; }
+    .anime-fav-card {
+      display: flex; gap: 12px; padding: 10px;
+      border: 1px solid var(--border2); cursor: pointer;
+      transition: border-color 0.12s;
+    }
+    .anime-fav-card:hover { border-color: var(--accent, #e07b54); }
+    .anime-fav-cover {
+      width: 46px; height: 64px; object-fit: cover; flex-shrink: 0;
+      background: rgba(255,255,255,0.05); display: block;
+    }
+    .anime-fav-placeholder {
+      width: 46px; height: 64px; flex-shrink: 0;
+      background: rgba(255,255,255,0.05);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 15px; color: var(--muted);
+    }
+    .anime-fav-info { flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+    .anime-fav-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .anime-fav-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+    .anime-fav-actions { display: flex; gap: 8px; margin-top: 6px; }
+    .anime-fav-actions button {
+      font-family: var(--mono); font-size: 9px; padding: 3px 8px;
+      background: none; border: 1px solid var(--border2);
+      color: var(--muted); cursor: pointer; letter-spacing: 0.06em;
+      text-transform: uppercase; transition: border-color 0.12s, color 0.12s;
+    }
+    .anime-fav-actions button:hover { border-color: var(--text); color: var(--text); }
+    .anime-fav-actions button.del:hover { border-color: #c0392b; color: #c0392b; }
+
+    /* ── Fav groups (char / va) ── */
+    .fav-groups { display: flex; flex-direction: column; gap: 0; }
+    .fav-group-label {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin: 14px 0 6px;
     }
 
-    .profile-block {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+    /* ── Favorites quota bar (kept) ── */
+    .fav-quota-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted);
     }
+    .bar-track { background: rgba(255,255,255,0.08); height: 3px; width: 100%; margin-bottom: 16px; }
+    .bar-fill  { background: var(--accent, #e07b54); height: 3px; transition: width 0.4s; }
+
+    /* ── Recent activity ── */
+    .activity-list { display: flex; flex-direction: column; gap: 0; }
+    .activity-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border2); font-size: 12px;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-badge {
+      font-family: var(--mono); font-size: 9px; padding: 2px 6px;
+      border: 1px solid var(--border2); color: var(--muted2);
+      flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .activity-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .activity-empty { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 12px 0; }
+
+    /* ── Insights ── */
+    .insight-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 8px 0; border-bottom: 1px solid var(--border2);
+    }
+    .insight-row:last-child { border-bottom: none; }
+    .insight-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+    .insight-value { font-family: var(--mono); font-size: 11px; color: var(--text); }
+
+    /* ── Preferences ── */
+    .pref-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 8px 0; border-bottom: 1px solid var(--border2);
+    }
+    .pref-row:last-child { border-bottom: none; }
+    .pref-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+    .pref-value { font-family: var(--mono); font-size: 11px; color: var(--text); }
 
     @media (max-width: 640px) {
-      .nav-tools {
-        margin-right: 8px;
-      }
-      .lang-toggle {
-        padding: 5px 8px;
-        gap: 6px;
-      }
+      .nav-tools { margin-right: 8px; }
+      .lang-toggle { padding: 5px 8px; gap: 6px; }
+      .qa-grid { grid-template-columns: 1fr 1fr; }
+      .profile-main { padding: 20px 16px; }
     }
   </style>
 </head>
@@ -100,7 +170,6 @@
   <a class="nav-logo" href="index.html">YOJI</a>
   <div class="nav-sep"></div>
   <span id="profile-nav-label" style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em">// USER PROFILE</span>
-
   <div class="nav-tools">
     <div class="lang-toggle" aria-label="Language switcher">
       <span class="lang-option active" id="lang-en-btn">EN</span>
@@ -108,7 +177,6 @@
       <span class="lang-option" id="lang-zh-btn">中文</span>
     </div>
   </div>
-
   <div class="nav-right" id="nav-user"></div>
 </nav>
 
@@ -121,6 +189,7 @@
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script>
+/* ── i18n ─────────────────────────────────────────────── */
 const PROFILE_I18N = {
   en: {
     navLabel: '// USER PROFILE',
@@ -131,17 +200,30 @@ const PROFILE_I18N = {
     sessionExpired: 'SESSION EXPIRED',
     memberSince: 'MEMBER SINCE',
     logout: 'LOGOUT',
-    favorites: 'FAVORITES',
+    favorites: 'MY FAVORITES',
     slotsUsed: 'slots used',
     anime: 'ANIME',
     character: 'CHARACTER',
     voiceActor: 'VOICE ACTOR',
-    openInGraph: 'Open in graph',
+    openInGraph: 'View',
     remove: 'Remove',
     removed: 'REMOVED',
     errorPrefix: 'ERROR: ',
     summaryTitle: 'PROFILE OVERVIEW',
-    summaryNote: 'Saved entries and account info'
+    summaryNote: 'Saved entries and account info',
+    quickActions: 'QUICK ACTIONS',
+    recentActivity: 'RECENT ACTIVITY',
+    noActivity: 'No recent activity yet.',
+    insights: 'PERSONAL INSIGHTS',
+    preferences: 'PREFERENCES',
+    mostCollected: 'MOST COLLECTED',
+    tendency: 'TENDENCY',
+    style: 'STYLE',
+    uiLang: 'UI LANGUAGE',
+    graphLang: 'GRAPH LABELS',
+    nodeLimit: 'DEFAULT LIMIT',
+    noFavorites: 'No favorites yet — explore the graph!',
+    favoritesQuota: 'COLLECTION QUOTA',
   },
   zh: {
     navLabel: '// 用户页面',
@@ -152,34 +234,40 @@ const PROFILE_I18N = {
     sessionExpired: '会话已过期',
     memberSince: '注册时间',
     logout: '退出登录',
-    favorites: '收藏',
+    favorites: '我的收藏',
     slotsUsed: '个名额已使用',
     anime: '动漫',
     character: '角色',
     voiceActor: '声优',
-    openInGraph: '在图谱中打开',
+    openInGraph: '查看',
     remove: '移除',
     removed: '已移除',
     errorPrefix: '错误：',
     summaryTitle: '用户概览',
-    summaryNote: '账户信息与已保存条目'
+    summaryNote: '账户信息与已保存条目',
+    quickActions: '快速操作',
+    recentActivity: '最近活动',
+    noActivity: '暂无最近活动。',
+    insights: '个人洞察',
+    preferences: '偏好设置',
+    mostCollected: '收藏最多',
+    tendency: '倾向',
+    style: '收藏风格',
+    uiLang: '界面语言',
+    graphLang: '图谱标签',
+    nodeLimit: '默认节点数',
+    noFavorites: '还没有收藏 — 去图谱探索吧！',
+    favoritesQuota: '收藏配额',
   }
 };
 
-function profileLang() {
-  return localStorage.getItem('yoji_lang') === 'zh' ? 'zh' : 'en';
-}
-
-function pt(key) {
-  const lang = profileLang();
-  return (PROFILE_I18N[lang] && PROFILE_I18N[lang][key]) || PROFILE_I18N.en[key] || key;
-}
+function profileLang() { return localStorage.getItem('yoji_lang') === 'zh' ? 'zh' : 'en'; }
+function pt(key) { const l = profileLang(); return (PROFILE_I18N[l]||{})[key] || PROFILE_I18N.en[key] || key; }
 
 function updateProfileLangButtons(lang) {
   document.getElementById('lang-en-btn').classList.toggle('active', lang === 'en');
   document.getElementById('lang-zh-btn').classList.toggle('active', lang === 'zh');
 }
-
 function applyProfileLanguage(lang) {
   localStorage.setItem('yoji_lang', lang);
   document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
@@ -187,6 +275,161 @@ function applyProfileLanguage(lang) {
   updateProfileLangButtons(lang);
 }
 
+/* ── Recent activity helpers ──────────────────────────── */
+const ACTIVITY_KEY = 'yoji_recent';
+const ACTIVITY_MAX = 10;
+
+function readActivity() {
+  try { return JSON.parse(localStorage.getItem(ACTIVITY_KEY)) || []; } catch { return []; }
+}
+function writeActivity(type, name, rawId) {
+  const list = readActivity().filter(a => !(a.type === type && a.name === name));
+  list.unshift({ type, name, rawId, ts: Date.now() });
+  localStorage.setItem(ACTIVITY_KEY, JSON.stringify(list.slice(0, ACTIVITY_MAX)));
+}
+
+/* ── Cover fetch ──────────────────────────────────────── */
+async function fetchCover(animeId) {
+  try {
+    const d = await apiFetch(`/cover?id=${encodeURIComponent(animeId)}`);
+    return (d && d.image_url) ? d.image_url : null;
+  } catch { return null; }
+}
+
+/* ── Status badge ─────────────────────────────────────── */
+function statusBadge(count) {
+  if (count === 0) return 'New Explorer';
+  if (count <= 3)  return 'Archive Builder';
+  if (count <= 7)  return 'Character Collector';
+  return 'Seiyuu Hunter';
+}
+
+/* ── Personal insights ────────────────────────────────── */
+function computeInsights(favData) {
+  const lang = profileLang();
+  const anime  = (favData.favorites.Anime      || []).length;
+  const chars  = (favData.favorites.Character  || []).length;
+  const va     = (favData.favorites.VoiceActor || []).length;
+  const total  = anime + chars + va;
+
+  let mostType = '—';
+  if (total > 0) {
+    const max = Math.max(anime, chars, va);
+    if (max === anime) mostType = lang === 'zh' ? '动漫' : 'Anime';
+    else if (max === chars) mostType = lang === 'zh' ? '角色' : 'Character';
+    else mostType = lang === 'zh' ? '声优' : 'Voice Actor';
+  }
+
+  let tendency = lang === 'zh' ? '未知' : 'Unknown';
+  if (anime >= chars && anime >= va && anime > 0) tendency = lang === 'zh' ? '作品向' : 'Series-focused';
+  else if (chars > va && chars > 0) tendency = lang === 'zh' ? '角色向' : 'Character-driven';
+  else if (va > 0) tendency = lang === 'zh' ? '声优向' : 'Seiyuu-focused';
+
+  let style = lang === 'zh' ? '新访客' : 'Newcomer';
+  if (total >= 8) style = lang === 'zh' ? '狂热收藏家' : 'Avid Collector';
+  else if (total >= 4) style = lang === 'zh' ? '深度探索者' : 'Deep Explorer';
+  else if (total >= 1) style = lang === 'zh' ? '轻度探索者' : 'Light Explorer';
+
+  return { mostType, tendency, style };
+}
+
+/* ── Preferences ──────────────────────────────────────── */
+function readPrefs() {
+  const lang = profileLang();
+  const graphLabel = localStorage.getItem('yoji_display_lang') ||
+                     (lang === 'zh' ? '中文' : 'EN');
+  return {
+    uiLang:    lang === 'zh' ? '中文' : 'EN',
+    graphLang: graphLabel,
+    nodeLimit: localStorage.getItem('yoji_node_limit') || '40',
+  };
+}
+
+/* ── Render helpers ───────────────────────────────────── */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function renderAnimeFavCards(items, covers) {
+  if (!items.length) return `<div class="activity-empty">${pt('noFavorites')}</div>`;
+  return `<div class="anime-cards-grid">${items.slice(0,3).map((f, i) => {
+    const cover = covers[i];
+    const initial = (f.item_display_name || '?')[0].toUpperCase();
+    const imgHtml = cover
+      ? `<img class="anime-fav-cover" src="${escHtml(cover)}" loading="lazy"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+              alt="${escHtml(f.item_display_name)}">
+         <div class="anime-fav-placeholder" style="display:none">${initial}</div>`
+      : `<div class="anime-fav-placeholder">${initial}</div>`;
+    return `
+      <div class="anime-fav-card" id="fav-${escHtml(f.favorite_id)}">
+        ${imgHtml}
+        <div class="anime-fav-info">
+          <div class="anime-fav-name" title="${escHtml(f.item_display_name)}">${escHtml(f.item_display_name)}</div>
+          <div class="anime-fav-meta">${f.created_at ? f.created_at.slice(0,10) : ''}</div>
+          <div class="anime-fav-actions">
+            <button onclick="goToGraph('Anime','${escHtml(f.item_raw_id)}','${escHtml(f.item_display_name)}')">${escHtml(pt('openInGraph'))}</button>
+            <button class="del" onclick="deleteFav('${escHtml(f.favorite_id)}')">${escHtml(pt('remove'))}</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+function renderFavGroup(label, items) {
+  if (!items.length) return '';
+  const limited = items.slice(0, 3);
+  return `
+    <div class="fav-group-label">${escHtml(label)} (${items.length})</div>
+    ${limited.map(f => `
+      <div class="fav-item" id="fav-${escHtml(f.favorite_id)}">
+        <span class="fav-item-name"
+              onclick="goToGraph('${escHtml(f.item_type)}','${escHtml(f.item_raw_id)}','${escHtml(f.item_display_name)}')"
+              title="${escHtml(pt('openInGraph'))}">
+          ${escHtml(f.item_display_name)}
+        </span>
+        <span class="fav-item-date">${f.created_at ? f.created_at.slice(0,10) : ''}</span>
+        <button class="fav-item-del" onclick="deleteFav('${escHtml(f.favorite_id)}')" title="${escHtml(pt('remove'))}">×</button>
+      </div>
+    `).join('')}
+    ${items.length > 3 ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:6px 0">+${items.length - 3} more</div>` : ''}
+  `;
+}
+
+function renderActivitySection() {
+  const list = readActivity().slice(0, 6);
+  if (!list.length) return `<div class="activity-empty">${pt('noActivity')}</div>`;
+  return `<div class="activity-list">${list.map(a => `
+    <div class="activity-item">
+      <span class="activity-badge">${escHtml(a.type)}</span>
+      <span class="activity-name"
+            onclick="goToGraph('${escHtml(a.type)}','${escHtml(a.rawId||'')}','${escHtml(a.name)}')"
+            style="cursor:pointer"
+            title="${escHtml(a.name)}">${escHtml(a.name)}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderInsights(favData) {
+  const { mostType, tendency, style } = computeInsights(favData);
+  return `
+    <div class="insight-row"><span class="insight-label">${pt('mostCollected')}</span><span class="insight-value">${escHtml(mostType)}</span></div>
+    <div class="insight-row"><span class="insight-label">${pt('tendency')}</span><span class="insight-value">${escHtml(tendency)}</span></div>
+    <div class="insight-row"><span class="insight-label">${pt('style')}</span><span class="insight-value">${escHtml(style)}</span></div>
+  `;
+}
+
+function renderPrefs() {
+  const p = readPrefs();
+  return `
+    <div class="pref-row"><span class="pref-label">${pt('uiLang')}</span><span class="pref-value">${escHtml(p.uiLang)}</span></div>
+    <div class="pref-row"><span class="pref-label">${pt('graphLang')}</span><span class="pref-value">${escHtml(p.graphLang)}</span></div>
+    <div class="pref-row"><span class="pref-label">${pt('nodeLimit')}</span><span class="pref-value">${escHtml(p.nodeLimit)}</span></div>
+  `;
+}
+
+/* ── Main load ────────────────────────────────────────── */
 async function loadProfile() {
   const main = document.getElementById('profile-main');
 
@@ -206,50 +449,115 @@ async function loadProfile() {
       apiFetch('/auth/me'),
       apiFetch('/favorites')
     ]);
-
     setUser(user);
     renderNavUser();
 
-    const initial = (user.display_name || user.email || '?')[0].toUpperCase();
-    const since   = user.created_at ? user.created_at.slice(0, 10) : '—';
-    const pct     = Math.round((favsData.favorite_count / user.favorite_limit) * 100);
+    const initial  = (user.display_name || user.email || '?')[0].toUpperCase();
+    const since    = user.created_at ? user.created_at.slice(0, 10) : '—';
+    const count    = favsData.favorite_count || 0;
+    const limit    = user.favorite_limit || 10;
+    const pct      = Math.round((count / limit) * 100);
+    const badge    = statusBadge(count);
+    const animeList = favsData.favorites.Anime || [];
+
+    // fetch covers for up to 3 anime items (parallel, silent fail)
+    const covers = await Promise.all(animeList.slice(0, 3).map(f => fetchCover(f.item_raw_id)));
+
+    const lang = profileLang();
 
     main.innerHTML = `
-      <div class="profile-block">
-        <div class="profile-subhead">
-          <span class="profile-subhead-title">${escHtml(pt('summaryTitle'))}</span>
-          <span class="profile-mini-note">${escHtml(pt('summaryNote'))}</span>
+
+      <!-- ① Top grid: Overview + Quick Actions -->
+      <div class="pc-grid">
+
+        <!-- Profile Overview -->
+        <div class="pc-section">
+          <div class="pc-section-title">
+            <span>${escHtml(pt('summaryTitle'))}</span>
+            <span style="opacity:.5;font-size:9px">${escHtml(pt('summaryNote'))}</span>
+          </div>
+          <div class="profile-card">
+            <div class="profile-av">${escHtml(initial)}</div>
+            <div class="profile-info">
+              <div class="profile-name">${escHtml(user.display_name || '—')}</div>
+              <div class="profile-email">${escHtml(user.email || '—')}</div>
+              <div class="profile-since">${escHtml(pt('memberSince'))} ${escHtml(since)}</div>
+              <div class="profile-since">${escHtml(pt('favoritesQuota'))} ${count} / ${limit}</div>
+              <div class="profile-status-badge">${escHtml(badge)}</div>
+            </div>
+            <div class="profile-actions">
+              <button class="btn btn-danger btn-sm" onclick="doLogout()">${escHtml(pt('logout'))}</button>
+            </div>
+          </div>
         </div>
 
-        <div class="profile-card">
-          <div class="profile-av">${initial}</div>
-          <div class="profile-info">
-            <div class="profile-name">${escHtml(user.display_name || '—')}</div>
-            <div class="profile-email">${escHtml(user.email || '—')}</div>
-            <div class="profile-since">${escHtml(pt('memberSince'))} ${since}</div>
-          </div>
-          <div class="profile-actions">
-            <button class="btn btn-danger btn-sm" onclick="doLogout()">${escHtml(pt('logout'))}</button>
+        <!-- Quick Actions -->
+        <div class="pc-section">
+          <div class="pc-section-title"><span>${escHtml(pt('quickActions'))}</span></div>
+          <div class="qa-grid">
+            <button class="qa-btn" onclick="window.location.href='graph.html'">
+              <span class="qa-btn-icon">⬡</span>${lang === 'zh' ? '进入图谱' : 'Go to Graph'}
+            </button>
+            <button class="qa-btn" onclick="window.location.href='graph.html'">
+              <span class="qa-btn-icon">→</span>${lang === 'zh' ? '继续探索' : 'Explore'}
+            </button>
+            <button class="qa-btn" onclick="document.getElementById('fav-section').scrollIntoView({behavior:'smooth'})">
+              <span class="qa-btn-icon">★</span>${lang === 'zh' ? '我的收藏' : 'My Favorites'}
+            </button>
+            <button class="qa-btn" onclick="window.location.href='graph.html?tab=rec'">
+              <span class="qa-btn-icon">✦</span>${lang === 'zh' ? '推荐' : 'Recommendations'}
+            </button>
           </div>
         </div>
+
       </div>
 
-      <div class="fav-section">
-        <div class="fav-head">
-          <span class="fav-head-title">${escHtml(pt('favorites'))}</span>
-          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${favsData.favorite_count} / ${user.favorite_limit}</span>
+      <!-- ② Favorites -->
+      <div class="pc-section" id="fav-section">
+        <div class="pc-section-title">
+          <span>${escHtml(pt('favorites'))}</span>
+          <span style="opacity:.6">${count} / ${limit} ${escHtml(pt('slotsUsed'))}</span>
         </div>
 
-        <div class="fav-quota">${favsData.favorite_count} / ${user.favorite_limit} ${escHtml(pt('slotsUsed'))}</div>
-        <div class="bar-track">
+        <div class="bar-track" style="margin-bottom:20px">
           <div class="bar-fill" style="width:${pct}%"></div>
         </div>
 
-        <div id="fav-lists">
-          ${renderFavGroup(pt('anime'), favsData.favorites.Anime || [])}
-          ${renderFavGroup(pt('character'), favsData.favorites.Character || [])}
-          ${renderFavGroup(pt('voiceActor'), favsData.favorites.VoiceActor || [])}
+        <!-- Anime cards with covers -->
+        <div class="fav-group-label">${escHtml(pt('anime'))} (${animeList.length})</div>
+        ${renderAnimeFavCards(animeList, covers)}
+
+        <!-- Character + VoiceActor lists -->
+        <div class="fav-groups">
+          ${renderFavGroup(pt('character'),   favsData.favorites.Character  || [])}
+          ${renderFavGroup(pt('voiceActor'),  favsData.favorites.VoiceActor || [])}
         </div>
+
+        ${(!animeList.length && !(favsData.favorites.Character||[]).length && !(favsData.favorites.VoiceActor||[]).length)
+          ? `<div class="activity-empty">${pt('noFavorites')}</div>` : ''}
+      </div>
+
+      <!-- ③ Bottom grid: Activity + Insights/Prefs -->
+      <div class="pc-grid">
+
+        <!-- Recent Activity -->
+        <div class="pc-section">
+          <div class="pc-section-title"><span>${escHtml(pt('recentActivity'))}</span></div>
+          ${renderActivitySection()}
+        </div>
+
+        <!-- Insights + Preferences stacked -->
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <div class="pc-section">
+            <div class="pc-section-title"><span>${escHtml(pt('insights'))}</span></div>
+            ${renderInsights(favsData)}
+          </div>
+          <div class="pc-section">
+            <div class="pc-section-title"><span>${escHtml(pt('preferences'))}</span></div>
+            ${renderPrefs()}
+          </div>
+        </div>
+
       </div>
     `;
 
@@ -269,24 +577,7 @@ async function loadProfile() {
   }
 }
 
-function renderFavGroup(label, items) {
-  if (!items.length) return '';
-  return `
-    <div class="fav-group-label">${escHtml(label)} (${items.length})</div>
-    ${items.map(f => `
-      <div class="fav-item" id="fav-${f.favorite_id}">
-        <span class="fav-item-name"
-              onclick="goToGraph('${escHtml(f.item_type)}', '${escHtml(f.item_raw_id)}', '${escHtml(f.item_display_name)}')"
-              title="${escHtml(pt('openInGraph'))}">
-          ${escHtml(f.item_display_name)}
-        </span>
-        <span class="fav-item-date">${f.created_at.slice(0,10)}</span>
-        <button class="fav-item-del" onclick="deleteFav('${f.favorite_id}')" title="${escHtml(pt('remove'))}">×</button>
-      </div>
-    `).join('')}
-  `;
-}
-
+/* ── Actions ──────────────────────────────────────────── */
 async function deleteFav(favId) {
   try {
     await apiFetch(`/favorites/${favId}`, { method: 'DELETE' });
@@ -294,42 +585,23 @@ async function deleteFav(favId) {
     if (el) el.remove();
     toast(pt('removed'), 'ok');
     setTimeout(loadProfile, 600);
-  } catch (err) {
-    toast(err.message, 'err');
-  }
+  } catch (err) { toast(err.message, 'err'); }
 }
 
 function goToGraph(type, rawId, name) {
-  let q = '';
-  if (type === 'Anime') q = rawId;
-  else q = name;
+  writeActivity(type, name, rawId);
+  let q = (type === 'Anime') ? rawId : name;
   window.location.href = `graph.html?q=${encodeURIComponent(q)}`;
 }
 
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
-}
-
+/* ── Boot ─────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   initShared();
-
   const lang = profileLang();
   applyProfileLanguage(lang);
 
-  document.getElementById('lang-en-btn').addEventListener('click', () => {
-    applyProfileLanguage('en');
-    loadProfile();
-  });
-
-  document.getElementById('lang-zh-btn').addEventListener('click', () => {
-    applyProfileLanguage('zh');
-    loadProfile();
-  });
+  document.getElementById('lang-en-btn').addEventListener('click', () => { applyProfileLanguage('en'); loadProfile(); });
+  document.getElementById('lang-zh-btn').addEventListener('click', () => { applyProfileLanguage('zh'); loadProfile(); });
 
   window.onAuthSuccess = () => loadProfile();
   loadProfile();
