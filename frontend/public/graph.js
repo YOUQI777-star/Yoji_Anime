@@ -367,7 +367,6 @@ function runLayout(full = false, fitView = true) {
   const nodeCount = cy.nodes().length;
   if (nodeCount === 0) return;
 
-  cy.resize(); // sync canvas size before layout
   const layout = cy.layout({
     name: 'cose',
     animate: nodeCount < 80,
@@ -1039,13 +1038,17 @@ function updateDepthStyles(focusNode) {
     cy.nodes().forEach(n => {
       const depth = depthMap.has(n.id()) ? depthMap.get(n.id()) : 99;
       if (depth === 0) {
+        n.removeStyle('opacity border-width border-color');
         n.style({ opacity: 1, 'border-width': 3, 'border-color': '#e07b54' });
       } else if (depth === 1) {
-        n.style({ opacity: 0.9, 'border-width': 1.5, 'border-color': 'data(color)' });
+        n.removeStyle('border-width border-color');
+        n.style({ opacity: 0.9 });
       } else if (depth === 2) {
-        n.style({ opacity: 0.6, 'border-width': 1.5, 'border-color': 'data(color)' });
+        n.removeStyle('border-width border-color');
+        n.style({ opacity: 0.6 });
       } else {
-        n.style({ opacity: 0.25, 'border-width': 1.5, 'border-color': 'data(color)' });
+        n.removeStyle('border-width border-color');
+        n.style({ opacity: 0.25 });
       }
     });
   });
@@ -1055,7 +1058,7 @@ function resetDepthStyles() {
   if (!cy) return;
   _focusNodeId = null;
   cy.batch(() => {
-    cy.nodes().forEach(n => n.style({ opacity: 1, 'border-width': 1.5, 'border-color': 'data(color)' }));
+    cy.nodes().forEach(n => n.removeStyle('opacity border-width border-color'));
   });
 }
 
