@@ -1837,7 +1837,8 @@ body.graph-page {
 /* ── Chat panel ── */
 .yoji-panel {
   width: 320px;
-  max-height: 420px;
+  /* 最多 420px，但不超过视口高度减去头像和底部留白 */
+  max-height: min(420px, calc(100vh - 220px));
   display: flex;
   flex-direction: column;
   background: var(--surface2);
@@ -1895,6 +1896,8 @@ body.graph-page {
   flex-direction: column;
   gap: 10px;
   min-height: 60px;
+  /* 消息区内部滚动，不撑开面板 */
+  max-height: min(280px, calc(100vh - 340px));
 }
 .yoji-msg {
   font-size: 13px;
