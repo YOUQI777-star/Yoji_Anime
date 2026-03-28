@@ -355,7 +355,7 @@ function loadGraph(data, replace = true, fitView = true) {
 
   // auto-apply edge labels if REL mode is on
   if (showEdgeLabels) {
-    cy.edges().style('label', e => e.data('type') || '');
+    cy.edges().style('label', e => e.data('label') || '');
     cy.edges().style('font-size', 8);
   }
 
@@ -1066,7 +1066,7 @@ function resetDepthStyles() {
 function toggleEdgeLabels() {
   showEdgeLabels = !showEdgeLabels;
   if (!cy) return;
-  cy.edges().style('label',     showEdgeLabels ? (e => e.data('type') || '') : '');
+  cy.edges().style('label',     showEdgeLabels ? (e => e.data('label') || '') : '');
   cy.edges().style('font-size', showEdgeLabels ? 8 : 0);
   const btn = document.getElementById('rel-toggle-btn');
   if (btn) btn.classList.toggle('active', showEdgeLabels);
