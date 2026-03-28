@@ -143,9 +143,11 @@ def get_node_raw_id(node):
     label = labels[0] if labels else "Unknown"
 
     if label in {"Anime", "Character"}:
-        return str(node.get("id"))
+        val = node.get("id")
+        return str(val) if val is not None else str(node.element_id)
     if label in {"VoiceActor", "Tag", "Studio", "Country"}:
-        return str(node.get("name"))
+        val = node.get("name")
+        return str(val) if val is not None else str(node.element_id)
     return str(node.element_id)
 
 
