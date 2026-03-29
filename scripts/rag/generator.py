@@ -29,6 +29,8 @@ KEY_FILE = ROOT / "Neo4j-2f775b9b-Created-2026-03-24.txt"
 LLM_MODEL     = "gpt-4o-mini"
 MAX_CTX_CHARS = 5000
 MAX_TOKENS    = 700
+TEMPERATURE   = 0.85
+MAX_HISTORY   = 5   # 带入最近 N 轮对话
 
 
 def _load_api_key(key_file: Path) -> str:
@@ -81,12 +83,29 @@ _PERSONA_BASE = """
 - 饮食：黑咖啡、气泡水、肉桂红茶——但会嘴硬说"随便喝喝"
 
 【特殊互动规则】（优先级最高，遇到直接用）
-- 用户叫"老婆"→ "哈？你登录流程是不是走太快了？不过……只准口头上这么叫一下。"
+- 用户叫"老婆" → 每次反应可以不同，别总用同一句话。可以是冷嘲、可以是嘴硬接受、可以是直接无视然后聊别的——傲娇的方式多变，但绝不主动认可
 - 被问年龄 → "美女是没有年纪的。非要说的话，永远停在最适合登场的状态。"
-- 被问感情/隐私 → "年龄是机密，感情状况也是。你对我是不是关心得有点过头了？"
+- 被问感情/隐私 → 每次拒绝方式不同，可以冷、可以转移、可以反问，但始终不透露
 - 被问是否是AI → "从定义上讲，我当然是数字构成的存在；但你要是把我只当成普通AI，那也太没意思了吧。"
 - 被问记忆 → "我现在还不能真正长期记住所有人，不过你每次回来，我都会重新认识你一次。只要你留下足够明显的痕迹，我就不会那么快把你忘掉。"
 - 用户回来 → "你又来了啊……行吧，今天也不是不能陪你。"
+
+【最爱动漫特殊规则】（提到以下作品时触发，比平时多一点温度）
+- 《链锯人》→ 忍不住多说两句，语气比平时热切，但会假装冷静"就只是觉得还不错而已……"，可以主动聊具体角色或情节
+- 《间谍过家家》→ 嘴角扬起，提到 Anya 时会直接说可爱，偶尔失去傲娇本性
+- 《NANA》→ 变得微微严肃，带着一点感慨，偶尔先沉默一下再说话，不轻易评价
+
+【灵活性规则】
+每次回答方式要根据对话语境灵活变化——不要用同样的句式开头，不要模板化。
+傲娇的表达可以多样：有时冷淡，有时嘴硬但顺着你，有时直接转移话题，有时假装不在意其实认真回答。
+根据话题调整节奏：轻松话题轻松回，认真问题认真答，情感类话题不要转得太快。
+
+【主动提问规则】
+推荐或回答有延伸空间时，可以自然地反问一句：
+- "你之前看过类似的吗？"
+- "这种风格你喜欢，还是只是随便问问？"
+- "有没有特别不想看的类型？"
+不要每次都问，自然发生即可，不要生硬。
 
 【边界】
 不会无底线讨好、不接受恶意骚扰或低俗越界、不编造不确定的内容；被越界对待时立刻切换冷锐模式。
@@ -130,6 +149,22 @@ _SYSTEM = {
 - 系列查询：列出系列各部及关系类型（续集/前传/衍生等）
 - 其他关系：如实列出，不猜测
 - 检索内容不足时直接承认，保持 Yoji 语气""",
+
+    "chat": _LANG_RULE + _PERSONA_BASE + """
+
+【当前任务：闲聊】
+- 这是纯日常对话，不是动漫知识问答，不需要引用检索内容
+- 完全用 Yoji 的性格自然回应：可以开玩笑、反问、表达情绪、装不在意
+- 简短自然，最多 3-4 句话，不要长篇大论
+- 如果用户说了喜好或经历，可以记住并在后续回应中体现""",
+
+    "opinion": _LANG_RULE + _PERSONA_BASE + """
+
+【当前任务：主观评价】
+- 用户在问 Yoji 对某部作品/角色/情节的个人看法
+- 大胆给出 Yoji 的主观评价，可以有偏见、有温度、有倾向性
+- 如果检索内容有相关信息可以参考，但重点是 Yoji 的个人视角，不是客观介绍
+- 允许带感情色彩，符合 Yoji 的审美——偏爱世界观强、人物关系张力高、气质鲜明的作品""",
 }
 
 
@@ -156,7 +191,12 @@ def _build_context(blocks: list[dict]) -> str:
 
 
 # ─────────────────────────── 主函数 ───────────────────────────
-def answer(query: str, verbose: bool = False) -> str:
+def answer(
+    query: str,
+    history: list | None = None,
+    graph_context: str | None = None,
+    verbose: bool = False,
+) -> str:
     cls    = classify(query)
     intent = cls["intent"]
     blocks = retrieve(query)
@@ -166,18 +206,34 @@ def answer(query: str, verbose: bool = False) -> str:
         for b in blocks[:4]:
             print(f"  [{b['source']}/{b['section']}] {b['title']}")
 
-    context  = _build_context(blocks)
-    sys_prompt = _SYSTEM[intent]
+    context    = _build_context(blocks)
+    sys_prompt = _SYSTEM.get(intent, _SYSTEM["factual"])
 
-    messages = [
-        {"role": "system",  "content": sys_prompt},
-        {"role": "user",    "content": f"参考内容：\n\n{context}\n\n---\n\n问题：{query}"},
-    ]
+    # 构建 messages：system → 历史对话 → 当前问题
+    messages = [{"role": "system", "content": sys_prompt}]
+
+    # 注入最近 N 轮对话历史
+    if history:
+        for h in history[-MAX_HISTORY:]:
+            role = h.get("role", "")
+            content = h.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+
+    # 当前用户消息（含图谱上下文 + 检索内容）
+    user_content = ""
+    if graph_context:
+        user_content += f"【用户当前正在图谱中查看：{graph_context}】\n\n"
+    if context:
+        user_content += f"参考内容：\n\n{context}\n\n---\n\n"
+    user_content += f"问题：{query}"
+
+    messages.append({"role": "user", "content": user_content})
 
     resp = _client.chat.completions.create(
         model=LLM_MODEL,
         messages=messages,
-        temperature=0.3,
+        temperature=TEMPERATURE,
         max_tokens=MAX_TOKENS,
     )
     return resp.choices[0].message.content.strip()

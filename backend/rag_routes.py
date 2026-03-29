@@ -68,8 +68,10 @@ def rag_ask():
     if not _lazy_init():
         return jsonify({"error": "RAG not ready"}), 503
 
-    body     = request.get_json(silent=True) or {}
-    question = (body.get("question") or body.get("query") or "").strip()
+    body          = request.get_json(silent=True) or {}
+    question      = (body.get("question") or body.get("query") or "").strip()
+    history       = body.get("history") or []          # [{role, content}, ...]
+    graph_context = (body.get("graph_context") or "").strip()
 
     if not question:
         return jsonify({"error": "missing question"}), 400
@@ -83,20 +85,36 @@ def rag_ask():
             # 2. 检索 context blocks
             blocks = _retrieve(question)
 
-            # 3. 构建 prompt
-            from scripts.rag.generator import _build_context, _SYSTEM, LLM_MODEL, MAX_TOKENS
-            context = _build_context(blocks)
+            # 3. 构建 prompt（含历史 + 图谱上下文）
+            from scripts.rag.generator import (
+                _build_context, _SYSTEM, LLM_MODEL, MAX_TOKENS, TEMPERATURE, MAX_HISTORY
+            )
+            context    = _build_context(blocks)
+            sys_prompt = _SYSTEM.get(intent, _SYSTEM["factual"])
 
-            messages = [
-                {"role": "system", "content": _SYSTEM[intent]},
-                {"role": "user",   "content": f"参考内容：\n\n{context}\n\n---\n\n问题：{question}"},
-            ]
+            messages = [{"role": "system", "content": sys_prompt}]
+
+            # 注入对话历史
+            for h in (history or [])[-MAX_HISTORY:]:
+                role    = h.get("role", "")
+                content = h.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+
+            # 当前用户消息
+            user_content = ""
+            if graph_context:
+                user_content += f"【用户当前正在图谱中查看：{graph_context}】\n\n"
+            if context:
+                user_content += f"参考内容：\n\n{context}\n\n---\n\n"
+            user_content += f"问题：{question}"
+            messages.append({"role": "user", "content": user_content})
 
             # 4. 流式调用 GPT
             stream = _oai.chat.completions.create(
                 model=LLM_MODEL,
                 messages=messages,
-                temperature=0.3,
+                temperature=TEMPERATURE,
                 max_tokens=MAX_TOKENS,
                 stream=True,
             )

@@ -1193,6 +1193,55 @@ document.addEventListener('DOMContentLoaded', async () => {
 let _yojiOpen  = false;
 let _yojiAbort = null;
 
+/* ── Yoji 对话历史（localStorage） ── */
+const YOJI_HISTORY_KEY = 'yoji_chat_history';
+const YOJI_PREFS_KEY   = 'yoji_user_prefs';
+const MAX_HISTORY_TURNS = 5;
+
+function _loadHistory() {
+  try { return JSON.parse(localStorage.getItem(YOJI_HISTORY_KEY) || '[]'); }
+  catch { return []; }
+}
+function _saveHistory(history) {
+  // 只保留最近 MAX_HISTORY_TURNS 轮（每轮 = user + assistant）
+  const trimmed = history.slice(-(MAX_HISTORY_TURNS * 2));
+  localStorage.setItem(YOJI_HISTORY_KEY, JSON.stringify(trimmed));
+}
+function _appendHistory(role, content) {
+  const h = _loadHistory();
+  h.push({ role, content });
+  _saveHistory(h);
+}
+
+/* ── 用户偏好记忆 ── */
+function _loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(YOJI_PREFS_KEY) || '{}'); }
+  catch { return {}; }
+}
+function _extractAndSavePrefs(userText) {
+  const prefs = _loadPrefs();
+  // 提取喜欢/不喜欢的类型关键词
+  const likeMatch = userText.match(/(?:喜欢|爱看|想看|偏爱).{0,20}?(战斗|治愈|恋爱|悬疑|科幻|奇幻|校园|热血|百合|机甲|运动|日常|搞笑|恐怖|推理|历史)/g);
+  const dislikeMatch = userText.match(/(?:不喜欢|不想看|讨厌|不爱).{0,20}?(战斗|治愈|恋爱|悬疑|科幻|奇幻|校园|热血|百合|机甲|运动|日常|搞笑|恐怖|推理|历史)/g);
+  if (likeMatch)    prefs.likes    = [...new Set([...(prefs.likes || []), ...likeMatch])].slice(-5);
+  if (dislikeMatch) prefs.dislikes = [...new Set([...(prefs.dislikes || []), ...dislikeMatch])].slice(-5);
+  localStorage.setItem(YOJI_PREFS_KEY, JSON.stringify(prefs));
+}
+function _buildPrefsContext() {
+  const prefs = _loadPrefs();
+  const parts = [];
+  if (prefs.likes?.length)    parts.push(`用户喜欢：${prefs.likes.join('、')}`);
+  if (prefs.dislikes?.length) parts.push(`用户不喜欢：${prefs.dislikes.join('、')}`);
+  return parts.join('；');
+}
+
+/* ── 获取当前图谱上下文 ── */
+function _getGraphContext() {
+  if (!cy) return '';
+  const nodes = cy.nodes().map(n => n.data('label') || n.data('name_cn') || n.data('name')).filter(Boolean);
+  return nodes.slice(0, 10).join('、');  // 最多取 10 个节点名
+}
+
 /* ── 显隐 ── */
 function showYoji() {
   const root = document.getElementById('yoji-root');
@@ -1234,6 +1283,10 @@ function submitYojiAsk() {
   const question = input.value.trim();
   if (!question) return;
 
+  // 记录用户输入 & 提取偏好
+  _appendHistory('user', question);
+  _extractAndSavePrefs(question);
+
   // Cancel any previous stream
   if (_yojiAbort) { _yojiAbort.abort(); }
   _yojiAbort = new AbortController();
@@ -1262,10 +1315,16 @@ function submitYojiAsk() {
 
   (async () => {
     try {
+      // 组装历史、图谱上下文、用户偏好
+      const history      = _loadHistory().slice(0, -1); // 不含刚存的这条
+      const graphCtx     = _getGraphContext();
+      const prefsCtx     = _buildPrefsContext();
+      const graphContext = [graphCtx, prefsCtx].filter(Boolean).join('；');
+
       const res = await fetch(`${API_BASE}/rag/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, history, graph_context: graphContext }),
         signal: _yojiAbort.signal,
       });
 
@@ -1304,6 +1363,9 @@ function submitYojiAsk() {
             }
             if (obj.done) {
               aiBubble.classList.remove('streaming');
+              // 保存 Yoji 回复到历史
+              const aiText = aiBubble.textContent.trim();
+              if (aiText) _appendHistory('assistant', aiText);
             }
             if (obj.error) {
               aiBubble.textContent = obj.error;

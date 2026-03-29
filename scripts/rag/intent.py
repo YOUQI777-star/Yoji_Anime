@@ -60,6 +60,29 @@ FACTUAL_PATTERNS = [
     r"第\s*[一二三四五六七八九十\d]+\s*季",
 ]
 
+# 闲聊：不涉及动漫知识，纯日常对话
+CHAT_PATTERNS = [
+    r"^(你好|hi|hello|嗨|哈喽|早上好|晚上好|下午好|good\s*(morning|evening|night|afternoon))",
+    r"^(哈哈|哈哈哈|lol|笑死)",
+    r"你叫什么|你是谁|你多大|介绍.{0,3}自己",
+    r"你(喜欢|讨厌|爱|恨).{0,5}(什么|哪|谁)",
+    r"你(今天|最近|现在)怎么样",
+    r"(陪我|聊聊天|说说话|无聊)",
+    r"(谢谢|感谢|thank)",
+    r"(再见|拜拜|bye|晚安|good\s*night)",
+    r"^(哦|哦哦|嗯|嗯嗯|好的|ok|okay|好)$",
+]
+
+# 主观评价：问 Yoji 对某作品/角色的看法
+OPINION_PATTERNS = [
+    r"你(觉得|认为|感觉|怎么看|喜欢吗|好看吗|值得看吗)",
+    r"(好看吗|值得看吗|推荐吗|怎么样|如何).{0,5}$",
+    r"你(最喜欢|最爱|最讨厌|最不喜欢)",
+    r"(哪个|哪部|哪个角色).{0,10}(更好|更喜欢|更厉害|比较)",
+    r"(烂|垃圾|神作|经典|好哭|感人|无聊).{0,5}吗",
+    r"你的(看法|评价|意见|观点)",
+]
+
 # 实体抽取简单规则（用于图查询补充）
 VOICE_ACTOR_KW = ["声优", "cv", "配音"]
 STUDIO_KW      = ["制作", "工作室", "动画公司", "京阿尼", "MAPPA", "ufotable",
@@ -80,7 +103,8 @@ def classify(query: str) -> dict:
     """
     q_lower = query.lower()
 
-    # 先判断 relation（更具体，优先级高）
+    # 优先级：relation > recommend > opinion > chat > factual
+    # 先判断 relation（最具体）
     for pat in RELATION_PATTERNS:
         if re.search(pat, q_lower):
             intent = "relation"
@@ -92,7 +116,19 @@ def classify(query: str) -> dict:
                 intent = "recommend"
                 break
         else:
-            intent = "factual"
+            # 再判断 opinion（主观评价）
+            for pat in OPINION_PATTERNS:
+                if re.search(pat, q_lower):
+                    intent = "opinion"
+                    break
+            else:
+                # 再判断 chat（闲聊）
+                for pat in CHAT_PATTERNS:
+                    if re.search(pat, q_lower):
+                        intent = "chat"
+                        break
+                else:
+                    intent = "factual"
 
     # 细分 relation 类型
     want_rel = None
