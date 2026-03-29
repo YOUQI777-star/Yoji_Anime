@@ -72,6 +72,7 @@ def rag_ask():
     question      = (body.get("question") or body.get("query") or "").strip()
     history       = body.get("history") or []          # [{role, content}, ...]
     graph_context = (body.get("graph_context") or "").strip()
+    user_name     = (body.get("user_name") or "").strip()
 
     if not question:
         return jsonify({"error": "missing question"}), 400
@@ -103,6 +104,8 @@ def rag_ask():
 
             # 当前用户消息
             user_content = ""
+            if user_name:
+                user_content += f"【当前用户昵称：{user_name}，已登录】\n\n"
             if graph_context:
                 user_content += f"【用户当前正在图谱中查看：{graph_context}】\n\n"
             if context:

@@ -1320,11 +1320,13 @@ function submitYojiAsk() {
       const graphCtx     = _getGraphContext();
       const prefsCtx     = _buildPrefsContext();
       const graphContext = [graphCtx, prefsCtx].filter(Boolean).join('；');
+      const user         = (typeof getUser === 'function') ? getUser() : null;
+      const user_name    = user?.display_name || '';
 
       const res = await fetch(`${API_BASE}/rag/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history, graph_context: graphContext }),
+        body: JSON.stringify({ question, history, graph_context: graphContext, user_name }),
         signal: _yojiAbort.signal,
       });
 
