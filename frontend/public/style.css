@@ -1792,10 +1792,9 @@ body.graph-page {
 #yoji-root {
   position: fixed;
   bottom: 0;
-  right: 24px;
+  left: 24px;
   z-index: 900;
   pointer-events: none;
-  /* 不用 flex 列：面板改为 absolute 悬浮，头像永远锚在底部 */
 }
 
 /* ── Avatar ── */
@@ -1843,26 +1842,23 @@ body.graph-page {
 
 /* ── Chat panel ── */
 .yoji-panel {
-  /* 脱离文档流，悬浮在头像上方，不影响头像位置 */
   position: absolute;
-  bottom: 100%;       /* 紧贴头像顶部 */
-  right: 0;
+  bottom: 100%;
+  left: 0;
   margin-bottom: 10px;
   width: 320px;
-  /* 高度最多 420px，但不超过视口减去底部留白 */
   max-height: min(420px, calc(100vh - 180px));
   display: flex;
   flex-direction: column;
   background: var(--surface2);
   border: 1px solid var(--border2);
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 14px 14px 14px 4px;
   overflow: hidden;
   pointer-events: all;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-  /* hidden state */
   opacity: 0;
   transform: translateY(16px) scale(0.97);
-  transform-origin: bottom right;
+  transform-origin: bottom left;
   transition: opacity 0.22s ease, transform 0.22s ease;
   visibility: hidden;
 }
@@ -1992,7 +1988,7 @@ body.graph-page {
 
 /* ── Mobile ── */
 @media (max-width: 640px) {
-  #yoji-root { right: 10px; }
+  #yoji-root { left: 10px; }
   .yoji-avatar-wrap { width: 100px; }
   .yoji-panel { width: calc(100vw - 20px); max-height: min(360px, calc(100vh - 160px)); }
 }
