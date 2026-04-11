@@ -1,0 +1,30 @@
+# gcloud builds submit 上传规则（不继承 .gitignore）
+
+.git/
+.github/
+**/__pycache__/
+*.py[cod]
+venv/
+.venv/
+backend/.venv/
+*.egg-info/
+.env
+*.env.local
+.DS_Store
+.vscode/
+.idea/
+node_modules/
+.vercel/
+*.log
+.claude/
+frontend/
+data/*.csv
+data/*.json
+data/*.db
+data/READY_VERSION/
+data/processed/
+Neo4j-*.txt
+update_sample/
+Untitled.ipynb
+
+# chroma_db 不排除 —— 需要打进镜像

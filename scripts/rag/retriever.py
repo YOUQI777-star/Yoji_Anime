@@ -255,12 +255,12 @@ def _graph_same_series(anime_title: str) -> list[dict]:
             "MATCH (a:Anime) "
             "WHERE a.id IS NOT NULL "
             "  AND (a.name CONTAINS $title OR a.name_cn CONTAINS $title) "
-            "WITH a ORDER BY a.score DESC LIMIT 1 "
+            "WITH a ORDER BY coalesce(a.score, 0) DESC LIMIT 1 "
             "MATCH (a)-[r:RELATED_TO]-(b:Anime) "
             "WHERE coalesce(r.same_series, 0) = 1 "
             "RETURN DISTINCT coalesce(b.name_cn, b.name) AS title, b.score AS score, "
             "       b.summary AS summary, r.relation_type AS rel "
-            "ORDER BY b.score DESC LIMIT $k",
+            "ORDER BY coalesce(b.score, 0) DESC LIMIT $k",
             title=anime_title, k=TOP_K_GRAPH,
         ).data()
     return [
@@ -283,14 +283,15 @@ def _graph_tag_similar(anime_title: str) -> list[dict]:
             "MATCH (src:Anime) "
             "WHERE src.id IS NOT NULL "
             "  AND (src.name CONTAINS $title OR src.name_cn CONTAINS $title) "
-            "WITH src ORDER BY src.score DESC LIMIT 1 "
+            "WITH src ORDER BY coalesce(src.score, 0) DESC LIMIT 1 "
             "MATCH (src)-[:HAS_TAG]->(t:Tag)<-[:HAS_TAG]-(other:Anime) "
             "WHERE other.id IS NOT NULL "
             "  AND other.id <> src.id AND other.score >= 7.5 "
             "  AND NOT (src)-[:RELATED_TO]-(other) "
-            "RETURN DISTINCT coalesce(other.name_cn, other.name) AS title, other.score AS score, "
-            "       other.summary AS summary, count(t) AS shared "
-            "ORDER BY shared DESC, other.score DESC LIMIT $k",
+            "WITH other, count(t) AS shared "
+            "RETURN coalesce(other.name_cn, other.name) AS title, other.score AS score, "
+            "       other.summary AS summary, shared "
+            "ORDER BY shared DESC, coalesce(other.score, 0) DESC LIMIT $k",
             title=anime_title, k=TOP_K_GRAPH,
         ).data()
     return [

@@ -115,8 +115,8 @@ def rag_ask():
             user_content = ""
             if user_name:
                 user_content += f"【当前用户昵称：{user_name}，已登录】\n\n"
-            # chat/opinion 纯聊天，不注入图谱上下文避免不相关扯到动漫
-            if graph_context and intent not in ("chat", "opinion"):
+            # 只有纯闲聊且无图谱上下文时才跳过注入；opinion 有 context 时仍需注入
+            if graph_context and intent not in ("chat",):
                 user_content += f"【用户当前正在图谱中查看：{graph_context}】\n\n"
             if context:
                 user_content += f"参考内容：\n\n{context}\n\n---\n\n"
