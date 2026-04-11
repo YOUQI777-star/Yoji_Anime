@@ -68,11 +68,20 @@ def rag_ask():
     if not _lazy_init():
         return jsonify({"error": "RAG not ready"}), 503
 
-    body          = request.get_json(silent=True) or {}
-    question      = (body.get("question") or body.get("query") or "").strip()
-    history       = body.get("history") or []          # [{role, content}, ...]
-    graph_context = (body.get("graph_context") or "").strip()
-    user_name     = (body.get("user_name") or "").strip()
+    body      = request.get_json(silent=True) or {}
+    question  = (body.get("question") or body.get("query") or "").strip()
+    history   = body.get("history") or []          # [{role, content}, ...]
+    user_name = (body.get("user_name") or "").strip()
+
+    # graph_context 可能是前端传来的 dict，也可能是字符串
+    _gc = body.get("graph_context")
+    if isinstance(_gc, dict):
+        import json as _json
+        graph_context = _json.dumps(_gc, ensure_ascii=False)
+    elif isinstance(_gc, str):
+        graph_context = _gc.strip()
+    else:
+        graph_context = ""
 
     if not question:
         return jsonify({"error": "missing question"}), 400

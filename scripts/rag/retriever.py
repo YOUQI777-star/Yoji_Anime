@@ -229,9 +229,9 @@ def _graph_same_va(va_name: str) -> list[dict]:
             "MATCH (v:VoiceActor) WHERE v.name = $name OR v.name CONTAINS $name "
             "WITH v LIMIT 1 "
             "MATCH (v)<-[:VOICED_BY]-(c:Character)<-[:HAS_CHARACTER]-(a:Anime) "
-            "WHERE a.score IS NOT NULL AND a.anime_id IS NOT NULL "
-            "RETURN DISTINCT a.title AS title, a.score AS score, "
-            "       a.summary AS summary, c.name_ja AS char, v.name AS va "
+            "WHERE a.score IS NOT NULL AND a.id IS NOT NULL "
+            "RETURN DISTINCT coalesce(a.name_cn, a.name) AS title, a.score AS score, "
+            "       a.summary AS summary, c.name AS char, v.name AS va "
             "ORDER BY a.score DESC LIMIT $k",
             name=va_name, k=TOP_K_GRAPH,
         ).data()
@@ -253,14 +253,13 @@ def _graph_same_series(anime_title: str) -> list[dict]:
     with _neo4j.session(database=_db) as s:
         rows = s.run(
             "MATCH (a:Anime) "
-            "WHERE a.anime_id IS NOT NULL "
-            "  AND (a.title CONTAINS $title OR a.name_cn CONTAINS $title "
-            "       OR a.name_ja CONTAINS $title) "
+            "WHERE a.id IS NOT NULL "
+            "  AND (a.name CONTAINS $title OR a.name_cn CONTAINS $title) "
             "WITH a ORDER BY a.score DESC LIMIT 1 "
             "MATCH (a)-[r:RELATED_TO]-(b:Anime) "
-            "WHERE r.same_series = 1 "
-            "RETURN DISTINCT b.title AS title, b.score AS score, "
-            "       b.summary AS summary, r.rel_type AS rel "
+            "WHERE coalesce(r.same_series, 0) = 1 "
+            "RETURN DISTINCT coalesce(b.name_cn, b.name) AS title, b.score AS score, "
+            "       b.summary AS summary, r.relation_type AS rel "
             "ORDER BY b.score DESC LIMIT $k",
             title=anime_title, k=TOP_K_GRAPH,
         ).data()
@@ -282,14 +281,14 @@ def _graph_tag_similar(anime_title: str) -> list[dict]:
     with _neo4j.session(database=_db) as s:
         rows = s.run(
             "MATCH (src:Anime) "
-            "WHERE src.anime_id IS NOT NULL "
-            "  AND (src.title CONTAINS $title OR src.name_cn CONTAINS $title "
-            "       OR src.name_ja CONTAINS $title) "
+            "WHERE src.id IS NOT NULL "
+            "  AND (src.name CONTAINS $title OR src.name_cn CONTAINS $title) "
             "WITH src ORDER BY src.score DESC LIMIT 1 "
             "MATCH (src)-[:HAS_TAG]->(t:Tag)<-[:HAS_TAG]-(other:Anime) "
-            "WHERE other.anime_id IS NOT NULL "
-            "  AND other.anime_id <> src.anime_id AND other.score >= 7.5 "
-            "RETURN DISTINCT other.title AS title, other.score AS score, "
+            "WHERE other.id IS NOT NULL "
+            "  AND other.id <> src.id AND other.score >= 7.5 "
+            "  AND NOT (src)-[:RELATED_TO]-(other) "
+            "RETURN DISTINCT coalesce(other.name_cn, other.name) AS title, other.score AS score, "
             "       other.summary AS summary, count(t) AS shared "
             "ORDER BY shared DESC, other.score DESC LIMIT $k",
             title=anime_title, k=TOP_K_GRAPH,

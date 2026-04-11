@@ -25,8 +25,7 @@ Neo4j-*.txt
 data/READY_VERSION/
 data/processed/
 
-# Chroma 向量库（280MB，不进 git 也不进镜像，后续用 GCS 方案挂载）
-data/chroma_db/
+# Chroma 向量库已通过 Dockerfile COPY data/chroma_db/ 打入镜像
 
 # 前端
 frontend/

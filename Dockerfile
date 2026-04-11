@@ -19,6 +19,9 @@ COPY backend/ .
 # 复制 RAG 脚本
 COPY scripts/ ./scripts/
 
+# 复制 ChromaDB 向量库
+COPY data/chroma_db/ ./data/chroma_db/
+
 # 环境变量
 # PROJECT_ROOT 让 retriever/generator/rag_routes 找到 scripts/ 目录
 ENV PROJECT_ROOT=/app
