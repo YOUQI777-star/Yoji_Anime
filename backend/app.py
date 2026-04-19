@@ -1669,21 +1669,36 @@ def watch_order():
 
     prequel_rels = {"前传", "prequel"}
     sequel_rels  = {"续集", "sequel"}
-    main_order, side_stories = [], []
+    # group='skip' = 总集篇/重制版（relation_type 可能为 None 或 '总集篇'）
+    # group='alt'  = 不同演绎，整体跳过
+    # group='universe' = 相同世界观，整体跳过
+
+    main_order, compilations, side_stories = [], [], []
     seen_ids = set()
+
     for row in rows:
-        grp = row.get("grp") or ""
-        if not grp or grp in ("alt", "universe") or row["id"] in seen_ids:
+        grp      = row.get("grp") or ""
+        rel_type = row.get("relation_type") or ""
+        rid      = row["id"]
+
+        if rid in seen_ids:
             continue
-        seen_ids.add(row["id"])
+        if not grp or grp in ("alt", "universe"):
+            continue
+
+        seen_ids.add(rid)
         name = (row.get("name_cn") or row.get("name") or "") if display_lang == "cn" \
                else (row.get("name") or row.get("name_cn") or "")
-        item = {"id": row["id"], "name": name,
-                "relation": row.get("relation_type") or "",
+        item = {"id": rid, "name": name,
+                "relation": rel_type or "总集篇",
                 "score": row.get("score"), "rank": row.get("rank")}
-        if grp == "main":
+
+        if grp == "skip":
+            compilations.append(item)
+        elif grp == "main":
             main_order.append(item)
         else:
+            # extra / other
             side_stories.append(item)
 
     main_order.sort(key=lambda x: (
@@ -1694,10 +1709,11 @@ def watch_order():
     main_order.insert(prequel_count, {**target, "relation": "本作", "is_target": True})
 
     return jsonify({
-        "target": target,
-        "main_order": main_order,
+        "target":       target,
+        "main_order":   main_order,
+        "compilations": compilations,
         "side_stories": side_stories,
-        "note": "根据现有 relationship 自动整理，供参考"
+        "note":         "根据 Bangumi 关系数据整理"
     })
 
 

@@ -91,7 +91,7 @@ const GRAPH_RUNTIME_I18N = {
     savedToFavorites: 'SAVED TO FAVORITES',
     aiUnavailable: 'AI unavailable',
     errorPrefix: 'Error: ',
-    watchOrder: 'ORDER'
+    watchOrder: 'SERIES'
   },
   zh: {
     selected: '已选',
@@ -127,7 +127,7 @@ const GRAPH_RUNTIME_I18N = {
     savedToFavorites: '已加入收藏',
     aiUnavailable: 'AI 当前不可用',
     errorPrefix: '错误：',
-    watchOrder: '顺序'
+    watchOrder: '系列'
   }
 };
 
@@ -285,7 +285,9 @@ function getCyStyle() {
         "opacity": 0.58,
         "color": C.text,
         "font-size": 8,
-        "font-weight": 400
+        "font-weight": 400,
+        "text-outline-color": C.bg,
+        "text-outline-width": 1.5
       }
     },
 
@@ -1062,9 +1064,14 @@ async function loadWatchOrder(animeId) {
   infoEl.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:8px 0">LOADING…</div>';
   try {
     const data = await apiFetch(`/watch_order?id=${animeId}&display_lang=${currentLang}`);
-    const mainHtml = (data.main_order || []).map((item, i) => `
+    const mainHtml = (data.main_order || []).map(item => `
       <div class="rec-item"${!item.is_target ? ` onclick="doSearchById(${item.id})" style="cursor:pointer"` : ''}>
-        <div class="rec-name" style="${item.is_target ? 'color:var(--red);font-weight:700' : ''}">${i + 1}. ${escHtml(item.name)}</div>
+        <div class="rec-name" style="${item.is_target ? 'color:var(--red);font-weight:700' : ''}">${escHtml(item.name)}</div>
+        <div class="rec-expl">${escHtml(item.relation)}</div>
+      </div>`).join('');
+    const compilationHtml = (data.compilations || []).map(item => `
+      <div class="rec-item" onclick="doSearchById(${item.id})" style="cursor:pointer">
+        <div class="rec-name">${escHtml(item.name)}</div>
         <div class="rec-expl">${escHtml(item.relation)}</div>
       </div>`).join('');
     const sideHtml = (data.side_stories || []).map(item => `
@@ -1075,6 +1082,7 @@ async function loadWatchOrder(animeId) {
     infoEl.innerHTML = `
       <div class="pane-label" style="margin-bottom:6px">主线</div>
       <div class="rec-list">${mainHtml || '<div style="color:var(--muted);font-size:11px;padding:4px 0">暂无数据</div>'}</div>
+      ${compilationHtml ? `<div class="pane-label" style="margin:10px 0 6px">总集篇 / 剧场版</div><div class="rec-list">${compilationHtml}</div>` : ''}
       ${sideHtml ? `<div class="pane-label" style="margin:10px 0 6px">番外 / OVA</div><div class="rec-list">${sideHtml}</div>` : ''}
       <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:8px;opacity:0.7">${escHtml(data.note || '')}</div>`;
   } catch {
