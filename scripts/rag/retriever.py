@@ -39,6 +39,7 @@ from scripts.rag.intent import classify
 
 TOP_K_VEC   = 8    # 向量检索条数
 TOP_K_GRAPH = 6    # 图检索条数
+MIN_VEC_SCORE = 0.15  # 向量检索最低相关性阈值：过滤负分及明显无关结果，保留语义相近条目
 
 
 # ─────────────────────────── 连接初始化 ───────────────────────
@@ -101,15 +102,37 @@ def _vec_retrieve(query: str, intent: str) -> list[dict]:
     """向量检索。Chroma 不可用时返回空列表（降级为纯图检索）。"""
     if _col_main is None:
         return []
-    emb = _embed(query)
+    try:
+        emb = _embed(query)
+    except Exception as e:
+        print(f"[retriever] embedding failed for vector retrieval: {e}")
+        return []
     blocks = []
 
-    if intent == "recommend":
-        # 推荐优先走 style_seed，再补 main
-        if _col_style:
-            res = _col_style.query(query_embeddings=[emb], n_results=TOP_K_VEC)
+    try:
+        if intent == "recommend":
+            # 推荐优先走 style_seed，再补 main
+            if _col_style:
+                res = _col_style.query(query_embeddings=[emb], n_results=TOP_K_VEC)
+                for doc, meta, dist in zip(
+                    res["documents"][0], res["metadatas"][0], res["distances"][0]
+                ):
+                    blocks.append({
+                        "source":  "vector",
+                        "title":   meta.get("title", ""),
+                        "section": meta.get("section", ""),
+                        "text":    doc,
+                        "score":   round(1 - dist, 4),
+                        "meta":    meta,
+                    })
+            # 补充 main 的 summary/overview
+            res2 = _col_main.query(
+                query_embeddings=[emb],
+                n_results=TOP_K_VEC,
+                where={"section": {"$in": ["summary", "overview", "style_profile"]}},
+            )
             for doc, meta, dist in zip(
-                res["documents"][0], res["metadatas"][0], res["distances"][0]
+                res2["documents"][0], res2["metadatas"][0], res2["distances"][0]
             ):
                 blocks.append({
                     "source":  "vector",
@@ -119,43 +142,29 @@ def _vec_retrieve(query: str, intent: str) -> list[dict]:
                     "score":   round(1 - dist, 4),
                     "meta":    meta,
                 })
-        # 补充 main 的 summary/overview
-        res2 = _col_main.query(
-            query_embeddings=[emb],
-            n_results=TOP_K_VEC,
-            where={"section": {"$in": ["summary", "overview", "style_profile"]}},
-        )
-        for doc, meta, dist in zip(
-            res2["documents"][0], res2["metadatas"][0], res2["distances"][0]
-        ):
-            blocks.append({
-                "source":  "vector",
-                "title":   meta.get("title", ""),
-                "section": meta.get("section", ""),
-                "text":    doc,
-                "score":   round(1 - dist, 4),
-                "meta":    meta,
-            })
-    else:
-        # factual / relation：直接查 main，偏向 summary+overview
-        for section_filter in [["summary", "overview", "tags", "characters"], None]:
-            kwargs = dict(query_embeddings=[emb], n_results=TOP_K_VEC)
-            if section_filter:
-                kwargs["where"] = {"section": {"$in": section_filter}}
-            res = _col_main.query(**kwargs)
-            for doc, meta, dist in zip(
-                res["documents"][0], res["metadatas"][0], res["distances"][0]
-            ):
-                blocks.append({
-                    "source":  "vector",
-                    "title":   meta.get("title", ""),
-                    "section": meta.get("section", ""),
-                    "text":    doc,
-                    "score":   round(1 - dist, 4),
-                    "meta":    meta,
-                })
-            if blocks:
-                break
+        else:
+            # factual / relation：直接查 main，偏向 summary+overview
+            for section_filter in [["summary", "overview", "tags", "characters"], None]:
+                kwargs = dict(query_embeddings=[emb], n_results=TOP_K_VEC)
+                if section_filter:
+                    kwargs["where"] = {"section": {"$in": section_filter}}
+                res = _col_main.query(**kwargs)
+                for doc, meta, dist in zip(
+                    res["documents"][0], res["metadatas"][0], res["distances"][0]
+                ):
+                    blocks.append({
+                        "source":  "vector",
+                        "title":   meta.get("title", ""),
+                        "section": meta.get("section", ""),
+                        "text":    doc,
+                        "score":   round(1 - dist, 4),
+                        "meta":    meta,
+                    })
+                if blocks:
+                    break
+    except Exception as e:
+        print(f"[retriever] vector retrieval fallback: {e}")
+        return []
 
     # 去重（同 title+section）
     seen = set()
@@ -165,6 +174,10 @@ def _vec_retrieve(query: str, intent: str) -> list[dict]:
         if key not in seen:
             seen.add(key)
             unique.append(b)
+
+    # 过滤低相关性结果（负分或低于阈值的条目不应进入 prompt）
+    unique = [b for b in unique if b.get("score") is None or b["score"] >= MIN_VEC_SCORE]
+
     return unique[:TOP_K_VEC + 4]
 
 
@@ -276,35 +289,101 @@ def _graph_same_series(anime_title: str) -> list[dict]:
     ]
 
 
-def _graph_tag_similar(anime_title: str) -> list[dict]:
-    """基于共享标签找相似番"""
+def _lookup_source_anime(anime_title: str) -> dict | None:
+    """根据番名查源番，优先返回有 summary 的最佳匹配。"""
     with _neo4j.session(database=_db) as s:
         rows = s.run(
             "MATCH (src:Anime) "
             "WHERE src.id IS NOT NULL "
             "  AND (src.name CONTAINS $title OR src.name_cn CONTAINS $title) "
-            "WITH src ORDER BY coalesce(src.score, 0) DESC LIMIT 1 "
-            "MATCH (src)-[:HAS_TAG]->(t:Tag)<-[:HAS_TAG]-(other:Anime) "
-            "WHERE other.id IS NOT NULL "
-            "  AND other.id <> src.id AND other.score >= 7.5 "
-            "  AND NOT (src)-[:RELATED_TO]-(other) "
-            "WITH other, count(t) AS shared "
-            "RETURN coalesce(other.name_cn, other.name) AS title, other.score AS score, "
-            "       other.summary AS summary, shared "
-            "ORDER BY shared DESC, coalesce(other.score, 0) DESC LIMIT $k",
-            title=anime_title, k=TOP_K_GRAPH,
+            "RETURN src.id AS id, "
+            "       coalesce(src.name_cn, src.name) AS title, "
+            "       coalesce(src.summary, '') AS summary, "
+            "       coalesce(src.score, 0) AS score "
+            "ORDER BY CASE WHEN trim(coalesce(src.summary, '')) <> '' THEN 0 ELSE 1 END ASC, "
+            "         coalesce(src.score, 0) DESC "
+            "LIMIT 1",
+            title=anime_title,
         ).data()
-    return [
-        {
-            "source":  "graph",
-            "title":   r["title"] or "",
-            "section": "tag_similar",
-            "text":    f"《{r['title']}》(score={r['score']}, 共享{r['shared']}个标签)\n简介：{r['summary'] or ''}",
-            "score":   r["score"],
-            "meta":    {"shared_tags": r["shared"]},
-        }
-        for r in rows if r["title"]
-    ]
+    return rows[0] if rows else None
+
+
+def _vec_similar_by_summary(anime_title: str) -> list[dict]:
+    """
+    用源番 summary 的 embedding 查 Chroma summary section，
+    替代基于共享标签的相似推荐。
+
+    fallback:
+      - 找不到源番 / 源番没有 summary
+      - Chroma 不可用
+      - Chroma 中没有可用的 summary chunk
+    这些情况返回 []，由 retrieve() 后续的 _vec_retrieve(query, intent) 继续兜底。
+    """
+    if _col_main is None:
+        return []
+
+    src = _lookup_source_anime(anime_title)
+    if not src:
+        return []
+
+    src_summary = (src.get("summary") or "").strip()
+    src_id = src.get("id")
+    src_title = src.get("title") or anime_title
+    if not src_summary:
+        return []
+
+    try:
+        emb = _embed(src_summary)
+        # 多取一些结果，方便过滤掉源番自身后还能保留足够候选。
+        res = _col_main.query(
+            query_embeddings=[emb],
+            n_results=max(TOP_K_GRAPH * 3, 12),
+            where={"section": "summary"},
+        )
+    except Exception as e:
+        print(f"[retriever] summary similarity fallback for '{src_title}': {e}")
+        return []
+
+    blocks = []
+    seen_entity_ids = set()
+
+    docs = res.get("documents", [[]])[0]
+    metas = res.get("metadatas", [[]])[0]
+    dists = res.get("distances", [[]])[0]
+
+    for doc, meta, dist in zip(docs, metas, dists):
+        if not meta:
+            continue
+
+        entity_id = str(meta.get("entity_id", "")).strip()
+        if src_id is not None and entity_id == str(src_id):
+            continue
+        if entity_id in seen_entity_ids:
+            continue
+        seen_entity_ids.add(entity_id)
+
+        title = meta.get("title_cn") or meta.get("title") or ""
+        if not title:
+            continue
+
+        score = round(1 - dist, 4) if dist is not None else None
+        blocks.append({
+            "source": "vector",
+            "title": title,
+            "section": "summary_similar",
+            "text": f"《{title}》\n简介：{doc}",
+            "score": score,
+            "meta": {
+                "entity_id": entity_id,
+                "based_on": src_title,
+                "match_section": "summary",
+            },
+        })
+
+        if len(blocks) >= TOP_K_GRAPH:
+            break
+
+    return blocks
 
 
 # ─────────────────────────── 主入口 ───────────────────────────
@@ -336,10 +415,11 @@ def retrieve(query: str) -> list[dict]:
                 blocks += _graph_same_series(title)
 
     elif intent == "recommend":
-        # 图：按标签相似推荐（如果 query 里有番名）
+        # 优先使用源番 summary 的向量相似推荐；没有 summary 时由后面的
+        # _vec_retrieve(query, intent) 继续兜底。
         title = _extract_anime_title(query)
         if title:
-            blocks += _graph_tag_similar(title)
+            blocks += _vec_similar_by_summary(title)
 
     # ── 向量检索（所有 intent 都补充）──
     blocks += _vec_retrieve(query, intent)

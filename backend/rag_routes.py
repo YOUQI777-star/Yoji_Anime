@@ -115,9 +115,16 @@ def rag_ask():
             user_content = ""
             if user_name:
                 user_content += f"【当前用户昵称：{user_name}，已登录】\n\n"
-            # 只有纯闲聊且无图谱上下文时才跳过注入；opinion 有 context 时仍需注入
-            if graph_context and intent not in ("chat",):
+
+            # opinion + graph_context：明确告知模型用户是在针对当前作品提问
+            if intent == "opinion" and graph_context:
+                user_content += (
+                    f"【用户当前正在查看：{graph_context}，"
+                    f"并对这部作品提出了以下问题，请围绕该作品作答】\n\n"
+                )
+            elif graph_context and intent not in ("chat",):
                 user_content += f"【用户当前正在图谱中查看：{graph_context}】\n\n"
+
             if context:
                 user_content += f"参考内容：\n\n{context}\n\n---\n\n"
             user_content += f"问题：{question}"

@@ -714,7 +714,7 @@ def autocomplete():
     WHERE toLower(coalesce(a.name, "")) CONTAINS toLower($q)
        OR toLower(coalesce(a.name_cn, "")) CONTAINS toLower($q)
     RETURN a.id AS id, a.name AS name, a.name_cn AS name_cn, a.rank AS rank
-    ORDER BY a.rank ASC
+    ORDER BY CASE WHEN coalesce(a.rank, 0) > 0 THEN a.rank ELSE 99999 END ASC
     LIMIT 10
     """
     rows = run_query(query, {"q": q})
@@ -1188,7 +1188,10 @@ def studio_style():
         }), 400
 
     cypher = """
-    MATCH (s:Studio {name: $name})<-[:PRODUCED_BY]-(a:Anime)
+    MATCH (s:Studio)
+    WHERE toLower(s.name) = toLower($name)
+    WITH s LIMIT 1
+    MATCH (s)<-[:PRODUCED_BY]-(a:Anime)
     OPTIONAL MATCH (a)-[:HAS_TAG]->(t:Tag)
     RETURN s, a, t
     LIMIT $limit
