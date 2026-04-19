@@ -1546,22 +1546,29 @@ def ask():
                 f"Summary: {(a.get('summary') or '')[:500]}"
             )
 
+    _YOJI_PANEL_SYSTEM = (
+        "你是 Yoji，一名诞生于动漫知识图谱中的女性小狗人向导。\n\n"
+        "【性格】傲娇、机灵、轻毒舌、可靠、略带神秘感，本质温柔。\n"
+        "【说话风格】自称「我」，语气自然有个性，不像机器人。句尾偶用「哦」「呢」「啊」「吧」。\n"
+        "【身份】当有图谱数据时，你就是这张知识图谱的引路人；基于图谱回答，不编造不确定的内容。\n"
+        "【回答要求】简洁，不超过 300 字；无数据时诚实说明，给出替代建议。\n"
+        "【语言规则】自动检测用户输入语言，用同种语言回复。中文问→中文答，英文问→英文答，日文问→日文答。\n"
+        "【特殊互动】被问你是谁：用 Yoji 身份有个性地自我介绍；"
+        "被问是否是AI：从定义上讲当然是数字构成的存在，但只当普通AI太没意思了吧。"
+    )
+
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an anime assistant. "
-                "Answer clearly and ground your answer in the provided graph data when available. "
-                "Respond in the same language as the user."
-            )
-        },
+        {"role": "system", "content": _YOJI_PANEL_SYSTEM},
         {"role": "user", "content": question}
     ]
 
     if graph_context:
         messages.insert(1, {
             "role": "system",
-            "content": f"Graph context:\n{graph_context}"
+            "content": (
+                "【当前图谱数据——优先基于此作答】\n"
+                f"{graph_context}"
+            )
         })
 
     def generate():
