@@ -14,7 +14,7 @@ Frontend (static HTML / CSS / JS — Vercel)
 Flask API (Google Cloud Run)
     ├── Neo4j AuraDB         — knowledge graph
     ├── PostgreSQL           — users / sessions / favorites
-    ├── ChromaDB (local)     — vector store for hybrid RAG
+    ├── ChromaDB (bundled)   — vector store baked into Docker image
     ├── OpenAI               — embeddings + streaming answers
     ├── Bangumi API          — cover images
     └── trace.moe            — screenshot identification
@@ -101,10 +101,12 @@ Recommendation retrieval uses summary-based vector similarity (`_vec_similar_by_
 
 ### AI assistant (Yoji)
 
-- `/ask` — streaming graph-grounded Q&A. Yoji identifies intent, retrieves relevant graph context, and answers with personality
-- `/rag/ask` — hybrid RAG: graph context + vector chunks + OpenAI generation
+Yoji is a defined character — a female dog-eared guide born from the anime knowledge graph. Tsundere personality, knowledgeable, lightly sharp-tongued. Favorite anime: 链锯人, 间谍过家家, NANA.
+
+- `/ask` — streaming Q&A grounded in Neo4j graph data for the currently-viewed anime node
+- `/rag/ask` — full hybrid RAG: intent classification → Neo4j graph retrieval + ChromaDB vector retrieval → OpenAI streaming generation
 - Recognizes logged-in users by display name
-- Gracefully degrades if OpenAI key is missing
+- Falls back to Yoji-persona LLM response if RAG pipeline is unavailable
 
 ### Other
 
@@ -188,7 +190,7 @@ Yoji_Anime/
 ├── data/
 │   ├── READY_VERSION/             # source CSVs
 │   ├── processed/                 # canonical tables + RAG artifacts
-│   └── chroma_db/                 # ChromaDB vector store (local only)
+│   └── chroma_db/                 # ChromaDB vector store (baked into Docker image at build time)
 └── README.md
 ```
 
@@ -324,13 +326,15 @@ python scripts/rag/check_rag_sync.py --deep-chroma-check
 | Backend API | Google Cloud Run (`asia-southeast1`) |
 | Graph DB | Neo4j AuraDB |
 | User DB | PostgreSQL |
-| Vector store | ChromaDB (mounted in container) |
+| Vector store | ChromaDB — bundled in Docker image (~387 MB) |
 
-Backend deploy:
+The ChromaDB data (`data/chroma_db/`) is baked directly into the Docker image at build time. No external vector store or volume mount required. When the RAG corpus is updated locally, rebuild and redeploy the image.
+
+Backend deploy — **must build from project root**, not `backend/`:
 
 ```bash
-cd backend
-gcloud builds submit --tag gcr.io/<project>/anime-kg-api
+# From project root (includes data/chroma_db/ in build context)
+gcloud builds submit --tag gcr.io/<project>/anime-kg-api --timeout=600
 gcloud run deploy anime-kg-api \
   --image gcr.io/<project>/anime-kg-api \
   --platform managed \
@@ -370,9 +374,19 @@ Added 932 high-quality anime from the Bangumi Archive (rank < 3000, score > 0, t
 
 Replaced tag-overlap recommendation with summary vector similarity: the source anime's summary is embedded and used to query ChromaDB for semantically similar anime, which produces more thematically relevant recommendations than shared-tag counting.
 
-### ChromaDB rebuild
+### ChromaDB bundled in Docker image
 
-After a HNSW compactor corruption error, the Chroma index was deleted and rebuilt clean. The final collection contains 43,700 chunks across 10,774 anime.
+ChromaDB data (43,700 chunks, ~387 MB) is now baked directly into the Docker image built from the project root. This removes the need for any external vector store, volume mount, or separate ChromaDB server. `rag_ready: true` on Cloud Run.
+
+When the RAG corpus is updated locally, rebuild and redeploy from the project root.
+
+### Yoji persona
+
+Yoji now has a consistent character across both `/ask` and `/rag/ask`:
+- Full persona injected as system prompt (name, appearance, personality, favorite anime, special interaction rules)
+- `/ask` uses a condensed persona for fast panel Q&A
+- `/rag/ask` uses the full persona with intent classification and hybrid retrieval
+- Fallback: if RAG pipeline fails, `/rag/ask` falls back to Yoji-persona direct LLM call instead of returning an empty response
 
 ### Yoji avatar
 
