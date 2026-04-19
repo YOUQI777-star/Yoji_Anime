@@ -1069,20 +1069,97 @@ def recommend():
 
     rec_ids = [row["id"] for row in recommendations]
 
-    graph_query_text = """
-    MATCH (target:Anime {id: $id})
-    MATCH (rec:Anime)
-    WHERE rec.id IN $rec_ids
-    OPTIONAL MATCH (target)-[r1]-(x)
-    OPTIONAL MATCH (rec)-[r2]-(y)
-    RETURN target, rec, r1, x, r2, y
-    LIMIT 400
-    """
-    graph_result = graph_query(
-        graph_query_text,
-        {"id": anime_id, "rec_ids": rec_ids},
-        display_lang=display_lang
+    # 构建推荐图谱：源番 + 推荐番节点 + 每番最多5个主角 + 共同标签
+
+    # 1. 源番 + 推荐番节点
+    anime_nodes_raw = run_query(
+        "MATCH (a:Anime) WHERE a.id = $id OR a.id IN $rec_ids "
+        "RETURN a.id AS id, a.name AS name, a.name_cn AS name_cn, "
+        "a.score AS score, a.rank AS rank",
+        {"id": anime_id, "rec_ids": rec_ids}
     )
+
+    # 2. 每个推荐番最多5个主角
+    char_rows = run_query(
+        "MATCH (a:Anime)-[:HAS_CHARACTER]->(c:Character) "
+        "WHERE a.id IN $rec_ids AND c.name IS NOT NULL "
+        "WITH a, c ORDER BY a.id "
+        "WITH a, collect(c)[0..5] AS chars "
+        "UNWIND chars AS c "
+        "RETURN a.id AS anime_id, c.id AS char_id, "
+        "coalesce(c.name_cn, c.name) AS char_name",
+        {"rec_ids": rec_ids}
+    )
+
+    # 3. 共同标签（源番与推荐番共享的，最多每对3个）
+    tag_rows = run_query(
+        "MATCH (target:Anime {id: $id})-[:HAS_TAG]->(t:Tag)<-[:HAS_TAG]-(rec:Anime) "
+        "WHERE rec.id IN $rec_ids "
+        "WITH rec.id AS anime_id, t.name AS tag_name "
+        "WITH anime_id, collect(DISTINCT tag_name)[0..3] AS tags "
+        "UNWIND tags AS tag_name "
+        "RETURN anime_id, tag_name",
+        {"id": anime_id, "rec_ids": rec_ids}
+    )
+
+    # 手动拼装 nodes / edges
+    nodes = {}
+    edges = {}
+
+    def anime_node(row):
+        aid = row["id"]
+        name = (row.get("name_cn") or row.get("name") or "") if display_lang == "cn" \
+               else (row.get("name") or row.get("name_cn") or "")
+        return {
+            "id": f"Anime_{aid}",
+            "type": "Anime",
+            "raw_id": aid,
+            "label": name,
+            "score": row.get("score"),
+            "rank": row.get("rank"),
+            "is_target": (aid == anime_id),
+        }
+
+    for row in anime_nodes_raw:
+        n = anime_node(row)
+        nodes[n["id"]] = {"data": n}
+
+    # 推荐番 → 角色
+    for row in char_rows:
+        cid = f"Character_{row['char_id']}"
+        if cid not in nodes:
+            nodes[cid] = {"data": {
+                "id": cid, "type": "Character",
+                "raw_id": row["char_id"], "label": row["char_name"],
+            }}
+        eid = f"Anime_{row['anime_id']}-HAS_CHARACTER-{cid}"
+        edges[eid] = {"data": {
+            "id": eid,
+            "source": f"Anime_{row['anime_id']}",
+            "target": cid,
+            "label": "HAS_CHARACTER",
+        }}
+
+    # 源番 → 共同标签 → 推荐番（三角连接）
+    for row in tag_rows:
+        tname = row["tag_name"]
+        tid = f"Tag_{tname}"
+        if tid not in nodes:
+            nodes[tid] = {"data": {
+                "id": tid, "type": "Tag",
+                "raw_id": tname, "label": tname,
+            }}
+        # 源番 → 标签
+        e1 = f"Anime_{anime_id}-HAS_TAG-{tid}"
+        edges[e1] = {"data": {"id": e1, "source": f"Anime_{anime_id}", "target": tid, "label": "HAS_TAG"}}
+        # 推荐番 → 标签
+        e2 = f"Anime_{row['anime_id']}-HAS_TAG-{tid}"
+        edges[e2] = {"data": {"id": e2, "source": f"Anime_{row['anime_id']}", "target": tid, "label": "HAS_TAG"}}
+
+    graph_result = {
+        "nodes": list(nodes.values()),
+        "edges": list(edges.values()),
+    }
 
     return jsonify({
         "recommendations": [
