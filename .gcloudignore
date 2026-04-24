@@ -28,3 +28,5 @@ update_sample/
 Untitled.ipynb
 
 # chroma_db 不排除 —— 需要打进镜像
+!data/chroma_db/
+!data/chroma_db/**
