@@ -40,6 +40,20 @@ from scripts.rag.intent import classify
 TOP_K_VEC   = 8    # 向量检索条数
 TOP_K_GRAPH = 6    # 图检索条数
 MIN_VEC_SCORE = 0.15  # 向量检索最低相关性阈值：过滤负分及明显无关结果，保留语义相近条目
+SERIES_RELATION_LABELS = {
+    "sequel", "prequel", "spinoff", "spin-off", "side story", "side_story",
+    "movie", "film", "theatrical", "ova", "oad", "special", "season",
+    "part", "chapter", "main story", "main_story", "omnibus",
+    "续集", "前传", "番外篇", "总集篇", "主线故事", "衍生", "全集",
+    "剧场版", "特别篇", "篇章", "季度", "季", "部分", "篇", "章",
+}
+SERIES_GROUP_LABELS = {
+    "sequel", "prequel", "spinoff", "spin-off", "side story", "side_story",
+    "movie", "film", "theatrical", "ova", "oad", "special", "season",
+    "part", "chapter", "main", "extra", "skip",
+    "续集", "前传", "番外篇", "总集篇", "主线故事", "衍生", "全集",
+    "剧场版", "特别篇", "篇章", "季度", "季", "部分", "篇", "章",
+}
 
 
 # ─────────────────────────── 连接初始化 ───────────────────────
@@ -235,6 +249,99 @@ def _extract_va_name(query: str) -> str | None:
     return None
 
 
+def _normalize_title(value: str | None) -> str:
+    value = (value or "").strip().lower()
+    if not value:
+        return ""
+
+    value = re.sub(r"[：:·•/／!！?？,，.。'\"“”‘’()\[\]【】\-—_~\s]+", "", value)
+
+    strip_patterns = [
+        r"第[0-9一二三四五六七八九十百零两]+(季|期|部分|部|章|篇)",
+        r"第[ivx]+(季|部|章|篇)",
+        r"season[0-9ivx]+",
+        r"part[0-9ivx]+",
+        r"chapter[0-9ivx]+",
+        r"cour[0-9ivx]+",
+        r"thefinalseason",
+        r"finalseason",
+        r"完结篇",
+        r"最终季",
+        r"最终章",
+        r"后篇",
+        r"前篇",
+        r"中篇",
+    ]
+    for pattern in strip_patterns:
+        value = re.sub(pattern, "", value, flags=re.IGNORECASE)
+
+    return value
+
+
+def _same_franchise_by_title(source_title: str, candidate_title: str) -> bool:
+    source_norm = _normalize_title(source_title)
+    candidate_norm = _normalize_title(candidate_title)
+    if not source_norm or not candidate_norm:
+        return False
+    if source_norm == candidate_norm:
+        return True
+
+    shorter, longer = sorted((source_norm, candidate_norm), key=len)
+    return len(shorter) >= 4 and shorter in longer
+
+
+def _same_series_entity_ids(src_id: int | str | None) -> set[str]:
+    if src_id is None:
+        return set()
+
+    with _neo4j.session(database=_db) as s:
+        rows = s.run(
+            "MATCH (src:Anime {id: toInteger($src_id)})-[r:RELATED_TO]-(other:Anime) "
+            "WHERE coalesce(r.same_series, 0) = 1 "
+            "   OR toLower(coalesce(r.relation_type, coalesce(r.rel_type, ''))) IN $rel_labels "
+            "   OR toLower(coalesce(r.group, '')) IN $group_labels "
+            "RETURN collect(DISTINCT toString(other.id)) AS ids",
+            src_id=src_id,
+            rel_labels=sorted(label.lower() for label in SERIES_RELATION_LABELS),
+            group_labels=sorted(label.lower() for label in SERIES_GROUP_LABELS),
+        ).data()
+    ids = rows[0]["ids"] if rows else []
+    return {str(i).strip() for i in ids if str(i).strip()}
+
+
+def _dedupe_recommendation_blocks(
+    blocks: list[dict],
+    source_title: str,
+    excluded_entity_ids: set[str] | None = None,
+) -> list[dict]:
+    excluded_entity_ids = excluded_entity_ids or set()
+    picked = []
+    seen_franchises = set()
+
+    for block in blocks:
+        title = (block.get("title") or "").strip()
+        if not title:
+            continue
+
+        meta = block.get("meta") or {}
+        entity_id = str(meta.get("entity_id", "")).strip()
+        if entity_id and entity_id in excluded_entity_ids:
+            continue
+
+        if _same_franchise_by_title(source_title, title):
+            continue
+
+        franchise = _normalize_title(title)
+        if franchise and franchise in seen_franchises:
+            continue
+
+        picked.append(block)
+        if franchise:
+            seen_franchises.add(franchise)
+
+    return picked
+
+
 def _graph_same_va(va_name: str) -> list[dict]:
     """查该声优配过的番"""
     with _neo4j.session(database=_db) as s:
@@ -300,7 +407,12 @@ def _lookup_source_anime(anime_title: str) -> dict | None:
             "       coalesce(src.name_cn, src.name) AS title, "
             "       coalesce(src.summary, '') AS summary, "
             "       coalesce(src.score, 0) AS score "
-            "ORDER BY CASE WHEN trim(coalesce(src.summary, '')) <> '' THEN 0 ELSE 1 END ASC, "
+            "ORDER BY CASE "
+            "           WHEN toLower(coalesce(src.name_cn, '')) = toLower($title) THEN 0 "
+            "           WHEN toLower(coalesce(src.name, '')) = toLower($title) THEN 1 "
+            "           ELSE 2 "
+            "         END ASC, "
+            "         CASE WHEN trim(coalesce(src.summary, '')) <> '' THEN 0 ELSE 1 END ASC, "
             "         coalesce(src.score, 0) DESC "
             "LIMIT 1",
             title=anime_title,
@@ -308,7 +420,7 @@ def _lookup_source_anime(anime_title: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def _vec_similar_by_summary(anime_title: str) -> list[dict]:
+def _vec_similar_by_summary(anime_title: str, src: dict | None = None) -> list[dict]:
     """
     用源番 summary 的 embedding 查 Chroma summary section，
     替代基于共享标签的相似推荐。
@@ -322,7 +434,7 @@ def _vec_similar_by_summary(anime_title: str) -> list[dict]:
     if _col_main is None:
         return []
 
-    src = _lookup_source_anime(anime_title)
+    src = src or _lookup_source_anime(anime_title)
     if not src:
         return []
 
@@ -331,6 +443,10 @@ def _vec_similar_by_summary(anime_title: str) -> list[dict]:
     src_title = src.get("title") or anime_title
     if not src_summary:
         return []
+
+    excluded_entity_ids = _same_series_entity_ids(src_id)
+    if src_id is not None:
+        excluded_entity_ids.add(str(src_id))
 
     try:
         emb = _embed(src_summary)
@@ -356,15 +472,18 @@ def _vec_similar_by_summary(anime_title: str) -> list[dict]:
             continue
 
         entity_id = str(meta.get("entity_id", "")).strip()
-        if src_id is not None and entity_id == str(src_id):
+        if entity_id and entity_id in excluded_entity_ids:
             continue
         if entity_id in seen_entity_ids:
             continue
-        seen_entity_ids.add(entity_id)
 
         title = meta.get("title_cn") or meta.get("title") or ""
         if not title:
             continue
+        if _same_franchise_by_title(src_title, title):
+            continue
+
+        seen_entity_ids.add(entity_id)
 
         score = round(1 - dist, 4) if dist is not None else None
         blocks.append({
@@ -397,6 +516,8 @@ def retrieve(query: str) -> list[dict]:
     rel_type = cls["hints"]["want_relation_type"]
 
     blocks = []
+    source_title = None
+    source_anime = None
 
     # ── 图检索部分 ──
     if intent == "relation":
@@ -419,10 +540,21 @@ def retrieve(query: str) -> list[dict]:
         # _vec_retrieve(query, intent) 继续兜底。
         title = _extract_anime_title(query)
         if title:
-            blocks += _vec_similar_by_summary(title)
+            source_title = title
+            source_anime = _lookup_source_anime(title)
+            if source_anime:
+                source_title = source_anime.get("title") or title
+            blocks += _vec_similar_by_summary(title, src=source_anime)
 
     # ── 向量检索（所有 intent 都补充）──
     blocks += _vec_retrieve(query, intent)
+
+    if intent == "recommend" and source_title:
+        excluded_entity_ids = set()
+        if source_anime and source_anime.get("id") is not None:
+            excluded_entity_ids = _same_series_entity_ids(source_anime["id"])
+            excluded_entity_ids.add(str(source_anime["id"]))
+        blocks = _dedupe_recommendation_blocks(blocks, source_title, excluded_entity_ids)
 
     # ── 全局去重（title+section）──
     seen = set()

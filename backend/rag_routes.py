@@ -63,20 +63,30 @@ _classify  = None
 _retrieve  = None
 _oai       = None
 _cfg       = None
+_extract_anime_title = None
+_lookup_source_anime = None
 
 def _lazy_init():
     global _rag_ready, _answer, _classify, _retrieve, _oai, _cfg
+    global _extract_anime_title, _lookup_source_anime
     if _rag_ready:
         return True
     try:
         from scripts.rag.generator import answer as _a, _client, _load_api_key
         from scripts.rag.intent    import classify as _c
-        from scripts.rag.retriever import retrieve as _r, _cfg as cfg
+        from scripts.rag.retriever import (
+            retrieve as _r,
+            _cfg as cfg,
+            _extract_anime_title as _eat,
+            _lookup_source_anime as _lsa,
+        )
         _answer   = _a
         _classify = _c
         _retrieve = _r
         _oai      = _client
         _cfg      = cfg
+        _extract_anime_title = _eat
+        _lookup_source_anime = _lsa
         _rag_ready = True
         return True
     except Exception as e:
@@ -286,18 +296,83 @@ def rag_recommend():
         result = _answer(query)
         cls    = _classify(query)
         blocks = _retrieve(query)
+        source_title = _extract_anime_title(query) if _extract_anime_title else None
+        source = _lookup_source_anime(source_title) if source_title and _lookup_source_anime else None
 
-        # 抽取推荐番名列表（graph blocks 的 title）
-        rec_titles = [
-            b["title"] for b in blocks
-            if b.get("source") == "graph" and b.get("title")
-        ]
+        recommendations = []
+        seen_ids = set()
+        seen_titles = set()
+        for block in blocks:
+            title = (block.get("title") or "").strip()
+            if not title:
+                continue
+
+            meta = block.get("meta") or {}
+            entity_id = str(meta.get("entity_id", "")).strip()
+            if entity_id and entity_id in seen_ids:
+                continue
+            if title in seen_titles:
+                continue
+            if entity_id:
+                seen_ids.add(entity_id)
+            seen_titles.add(title)
+
+            text = (block.get("text") or "").strip()
+            snippet = text
+            if "简介：" in snippet:
+                snippet = snippet.split("简介：", 1)[1].strip()
+            snippet = snippet.replace(f"《{title}》", "").strip()
+
+            recommendations.append({
+                "id": int(entity_id) if entity_id.isdigit() else None,
+                "name": meta.get("title") or title,
+                "name_cn": meta.get("title_cn") or title,
+                "score": block.get("score"),
+                "section": block.get("section"),
+                "snippet": snippet[:220],
+            })
+            if len(recommendations) >= 10:
+                break
+
+        nodes = []
+        edges = []
+        if source:
+            nodes.append({"data": {
+                "id": f"Anime_{source['id']}",
+                "type": "Anime",
+                "raw_id": source["id"],
+                "label": source.get("title") or source_title or "",
+                "is_target": True,
+            }})
+
+        for rec in recommendations:
+            if rec["id"] is None:
+                continue
+            nodes.append({"data": {
+                "id": f"Anime_{rec['id']}",
+                "type": "Anime",
+                "raw_id": rec["id"],
+                "label": rec["name_cn"] or rec["name"],
+                "score": rec.get("score"),
+                "is_target": False,
+            }})
+            if source:
+                edges.append({"data": {
+                    "id": f"Anime_{source['id']}-RECOMMENDS-Anime_{rec['id']}",
+                    "source": f"Anime_{source['id']}",
+                    "target": f"Anime_{rec['id']}",
+                    "label": "RECOMMENDS",
+                    "type": "RECOMMENDS",
+                }})
 
         return jsonify({
             "answer":      result,
             "intent":      cls["intent"],
-            "recommended": rec_titles,
+            "source":      source,
+            "recommendations": recommendations,
             "blocks":      len(blocks),
+            "nodes":       nodes,
+            "edges":       edges,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

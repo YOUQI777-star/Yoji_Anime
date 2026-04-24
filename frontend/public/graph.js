@@ -36,6 +36,7 @@ const EDGE_COLOR = {
   VOICED_BY: "rgba(231,176,122,0.42)",
   HAS_TAG: "rgba(143,167,198,0.28)",
   RELATED_TO: "#c9775e",
+  RECOMMENDS: "#c9775e",
   PRODUCED_BY: "rgba(197,154,178,0.38)",
   ORIGIN_COUNTRY: "rgba(125,146,184,0.34)"
 };
@@ -335,6 +336,17 @@ function getCyStyle() {
         "arrow-scale": 0.72,
         "opacity": 0.82
       }
+    },
+
+    {
+      selector: 'edge[type="RECOMMENDS"]',
+      style: {
+        "line-color": EDGE_COLOR.RECOMMENDS,
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": C.red,
+        "arrow-scale": 0.72,
+        "opacity": 0.82
+      }
     }
   ];
 }
@@ -600,10 +612,17 @@ async function runRecommend() {
   if (!input) { toast(gt('enterAnimeNameOrId'), 'err'); return; }
   showGraphLoading(true);
   try {
-    const param = /^\d+$/.test(input) ? `id=${input}` : `name=${encodeURIComponent(input)}`;
-    const data = await apiFetch(`/recommend?${param}&display_lang=${currentLang}&limit=10`);
+    let title = input;
+    if (/^\d+$/.test(input)) {
+      const anime = await apiFetch(`/anime?id=${input}`);
+      title = anime.name_cn || anime.name || input;
+    }
+    const data = await apiFetch('/rag/recommend', {
+      method: 'POST',
+      body: JSON.stringify({ query: `推荐和${title}类似的番` })
+    });
     loadGraph({ nodes: data.nodes, edges: data.edges }, true);
-    renderRecList(data.recommendations);
+    renderRecList(data.recommendations || []);
   } catch (err) {
     toast(err.message, 'err');
   } finally {
@@ -616,11 +635,13 @@ function renderRecList(recs) {
   if (!el) return;
   if (!recs || !recs.length) { el.innerHTML = `<div class="empty-state">${gt('noResults')}</div>`; return; }
   el.innerHTML = recs.map(r => `
-    <div class="rec-item" onclick="doSearchById(${r.id})">
+    <div class="rec-item" ${r.id ? `onclick="doSearchById(${r.id})"` : ''}>
       <div class="rec-name">${escHtml(r.name_cn || r.name)}</div>
       <div class="rec-expl">
-        ${gt('tagsShort')}:${r.explanation.shared_tags} · ${gt('vaShort')}:${r.explanation.shared_voice_actors} · ${gt('studioShort')}:${r.explanation.shared_studios}
+        ${(r.score != null) ? `${gt('scoreShort')}:${Number(r.score).toFixed(2)}` : gt('animeShort')}
+        ${r.section ? ` · ${escHtml(String(r.section).replaceAll('_', ' '))}` : ''}
       </div>
+      ${r.snippet ? `<div class="rec-expl" style="margin-top:4px;line-height:1.45">${escHtml(r.snippet)}</div>` : ''}
     </div>
   `).join('');
 }
