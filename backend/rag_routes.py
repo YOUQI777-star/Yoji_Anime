@@ -293,6 +293,7 @@ def rag_recommend():
         return jsonify({"error": "missing query"}), 400
 
     try:
+        print("[rag_recommend] serving rag-rec-v2")
         result = _answer(query)
         cls    = _classify(query)
         blocks = _retrieve(query)
@@ -366,6 +367,7 @@ def rag_recommend():
                 }})
 
         return jsonify({
+            "api_version": "rag-rec-v2",
             "answer":      result,
             "intent":      cls["intent"],
             "source":      source,
